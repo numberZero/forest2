@@ -5,10 +5,11 @@ layout(location = 1) uniform mat4 camera_matrix;
 
 layout(location = 0) in vec3 in_pos;
 layout(location = 1) in vec3 in_color;
+layout(location = 2) in vec3 in_offset;
 
 out vec4 color;
 
 void main() {
 	color = vec4(in_color, 1.0);
-	gl_Position = projection_matrix * camera_matrix * vec4(in_pos, 1.0);
+	gl_Position = projection_matrix * camera_matrix * vec4(in_offset + in_pos, 1.0);
 }

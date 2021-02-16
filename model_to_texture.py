@@ -134,7 +134,7 @@ def compile_shader(mode, code):
 	glShaderSource(shader, code)
 	glCompileShader(shader)
 	if not glGetShaderiv(shader, GL_COMPILE_STATUS):
-		raise Error('Shader compilation error:\n' + str(glGetShaderInfoLog(shader), encoding='utf-8'))
+		raise Error('Shader compilation error: %s\n' % glGetShaderInfoLog(shader))
 	return shader
 
 def link_program(*shaders):
@@ -145,7 +145,7 @@ def link_program(*shaders):
 	for shader in shaders:
 		glDeleteShader(shader)
 	if not glGetProgramiv(program, GL_LINK_STATUS):
-		raise Error('Shader compilation error:\n' + str(glGetProgramInfoLog(program), encoding='utf-8'))
+		raise Error('Shader compilation error: %s\n' % glGetProgramInfoLog(program))
 	return program
 
 def init():
@@ -292,8 +292,6 @@ def prepare_instances():
 		], axis=2).reshape((-1, 4))
 	rng = rnd.default_rng()
 	rng.shuffle(verts)
-	#model_vertices, fake_vertices = np.split(verts, [len(verts) // 2])
-	#fake_vertices = fake_vertices.ravel().reshape((-1, 4))
 
 def render():
 	time = glfw.get_time()
@@ -301,7 +299,29 @@ def render():
 	glMatrixMode(GL_MODELVIEW)
 	glLoadMatrixf(camera_matrix)
 	render_tripod()
-	render_thing()
+
+	n = len(verts)
+	m = n // 5
+
+	glLineWidth(2.5)
+	glUseProgram(program_mesh)
+	glUniformMatrix4fv(0, 1, GL_FALSE, projection_matrix)
+	glUniformMatrix4fv(1, 1, GL_FALSE, camera_matrix)
+	bufs, ibuf = thing
+	for k, buf in enumerate(bufs):
+		glVertexAttribPointer(k, buf.shape[1], GL_FLOAT, GL_FALSE, 0, buf)
+		glEnableVertexAttribArray(k)
+	glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 16, verts)
+	glVertexAttribDivisor(2, 1)
+	glEnableVertexAttribArray(2)
+	glEnable(GL_PRIMITIVE_RESTART)
+	glPrimitiveRestartIndex(65535)
+	glDrawElementsInstanced(GL_LINE_STRIP, len(ibuf), GL_UNSIGNED_SHORT, ibuf, m)
+	glDrawElements(GL_LINE_STRIP, len(ibuf), GL_UNSIGNED_SHORT, ibuf)
+	for k, buf in enumerate(bufs):
+		glDisableVertexAttribArray(k)
+	glDisableVertexAttribArray(2)
+
 	glUseProgram(0)
 	glColor3f(0.0, 0.1, 0.0)
 	glBegin(GL_QUADS)
@@ -320,8 +340,7 @@ def render():
 	glUniform1i(3, angles)
 	glEnableVertexAttribArray(0)
 	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, verts)
-	n = len(verts)
-	glDrawArrays(GL_POINTS, 0, n // 2)
+	glDrawArrays(GL_POINTS, m, n - m)
 	glDisableVertexAttribArray(0)
 	glUseProgram(0)
 	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
@@ -353,6 +372,7 @@ def prerender_bills():
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
 	glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAX_ANISOTROPY, 8.0)
 
+	glVertexAttrib3f(2, 0, 0, 0)
 	glViewport(0, 0, size, size)
 	for view in range(angles // 2 + 1):
 		camera_matrix = glm.translate(glm.rotate(mat4(1.0), float((0.5 - 1.0 * view / angles) * math.pi), vec3(1.0, 0.0, 0.0)), vec3(0.0, 0.0, -0.5))
