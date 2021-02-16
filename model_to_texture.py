@@ -210,7 +210,7 @@ def update(dt: float):
 
 def update0():
 	global camera_matrix, move_matrix
-	camera_matrix = make_camera_orientation_matrix(rotation_ypr.x, rotation_ypr.y, rotation_ypr.z)
+	camera_matrix = glm.translate(mat4(make_camera_orientation_matrix(rotation_ypr.x, rotation_ypr.y, rotation_ypr.z)), -position)
 	move_matrix = glm.transpose(make_camera_orientation_matrix(rotation_ypr.x, 0.0, 0.0))
 
 def render_tripod():
@@ -242,41 +242,48 @@ def make_thing(size = 1.0, branches = 128, seed = 0):
 	da = lambda: rgen.uniform(-math.pi, math.pi)
 	ddr = lambda: rgen.uniform(size / 128.0, size / 32.0)
 	ddz = lambda: size / rgen.uniform(16.0, 32.0)
-	bufs = []
+	pbuf = []
+	cbuf = []
+	ibuf = []
 	for k in range(branches):
 		a = da()
 		dir = vec2(math.cos(a), math.sin(a))
 		pos2 = vec2()
 		delta = vec2(ddr(), ddz())
-		len = 0.0
-		pbuf = []
-		cbuf = []
+		blen = 0.0
 		while delta.y > -delta.x:
-			color = vec3(0.4 - 0.5 * len, 0.6, 0.3 - 1.0 * len)
+			color = vec3(0.4 - 0.5 * blen, 0.6, 0.3 - 1.0 * blen)
 			pos = vec3(pos2.x * dir, pos2.y)
+			ibuf.append(len(pbuf))
 			pbuf.append(pos)
 			cbuf.append(color)
 			pos2 += delta
-			len += glm.length(delta)
+			blen += glm.length(delta)
 			delta.y -= 1.0 / 256.0
-		bufs.append((np.array(pbuf, dtype='float32'), np.array(cbuf, dtype='float32')))
-	return bufs
+		ibuf.append(65535)
+	ibuf.pop()
+	return ((np.array(pbuf, dtype='float32'), np.array(cbuf, dtype='float32')), np.array(ibuf, dtype='uint16'))
 
 def render_mesh(mesh):
 	glLineWidth(2.5)
-	for pbuf, cbuf in mesh:
-		glVertexPointer(3, GL_FLOAT, 0, pbuf)
-		glColorPointer(3, GL_FLOAT, 0, cbuf)
-		glEnable(GL_VERTEX_ARRAY)
-		glEnable(GL_COLOR_ARRAY)
-		glDrawArrays(GL_LINE_STRIP, 0, len(pbuf))
-		glDisable(GL_VERTEX_ARRAY)
-		glDisable(GL_COLOR_ARRAY)
+	glUseProgram(program_mesh)
+	glUniformMatrix4fv(0, 1, GL_FALSE, projection_matrix)
+	glUniformMatrix4fv(1, 1, GL_FALSE, camera_matrix)
+	bufs, ibuf = mesh
+	for k, buf in enumerate(bufs):
+		glVertexAttribPointer(k, buf.shape[1], GL_FLOAT, GL_FALSE, 0, buf)
+		glEnableVertexAttribArray(k)
+	glEnable(GL_PRIMITIVE_RESTART)
+	glPrimitiveRestartIndex(65535)
+	glDrawElements(GL_LINE_STRIP, len(ibuf), GL_UNSIGNED_SHORT, ibuf)
+	for k, buf in enumerate(bufs):
+		glDisableVertexAttribArray(k)
 
 def render_thing():
 	render_mesh(thing)
 
 def prepare_instances():
+	global verts
 	verts = np.stack([
 		np.broadcast_to(np.linspace(-100.0, 100.0, 201), (201, 201)),
 		np.broadcast_to(np.linspace(-100.0, 100.0, 201), (201, 201)).transpose(),
@@ -285,15 +292,17 @@ def prepare_instances():
 		], axis=2).reshape((-1, 4))
 	rng = rnd.default_rng()
 	rng.shuffle(verts)
-	model_vertices, fake_vertices = np.split(verts, [len(verts) // 4])
+	#model_vertices, fake_vertices = np.split(verts, [len(verts) // 2])
+	#fake_vertices = fake_vertices.ravel().reshape((-1, 4))
 
 def render():
 	time = glfw.get_time()
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 	glMatrixMode(GL_MODELVIEW)
-	glLoadMatrixf(glm.translate(mat4(camera_matrix),  -position))
+	glLoadMatrixf(camera_matrix)
 	render_tripod()
 	render_thing()
+	glUseProgram(0)
 	glColor3f(0.0, 0.1, 0.0)
 	glBegin(GL_QUADS)
 	glVertex2f(-1000.0, -1000.0)
@@ -304,41 +313,30 @@ def render():
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
 	glUseProgram(program_bill)
 	glUniformMatrix4fv(0, 1, GL_FALSE, projection_matrix)
-	glUniformMatrix3fv(1, 1, GL_FALSE, camera_matrix)
+	glUniformMatrix3fv(1, 1, GL_FALSE, mat3(camera_matrix))
 	glUniform3fv(2, 1, position)
 	glBindTextureUnit(0, 1)
-	#verts = np.ndarray((201, 201, 4))
-	#verts[:, :, 0] = np.broadcast_to(np.linspace(-100.0, 100.0, 201), (201, 201))
-	#verts[:, :, 1] = np.broadcast_to(np.linspace(-100.0, 100.0, 201), (201, 201)).transpose()
-	#verts[:, :, 2] = 0.0
-	#verts[:, :, 3] = 1.0
-	#verts = verts.reshape((-1, 4))
-	verts = np.stack([
-		np.broadcast_to(np.linspace(-100.0, 100.0, 201), (201, 201)),
-		np.broadcast_to(np.linspace(-100.0, 100.0, 201), (201, 201)).transpose(),
-		np.zeros((201, 201)),
-		np.ones((201, 201)),
-		], axis=2).reshape((-1, 4))
 	glVertexAttrib2f(1, 1.0, 1.0)
 	glUniform1i(3, angles)
 	glEnableVertexAttribArray(0)
 	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, verts)
-	glDrawArrays(GL_POINTS, 0, len(verts))
+	n = len(verts)
+	glDrawArrays(GL_POINTS, 0, n // 2)
 	glDisableVertexAttribArray(0)
 	glUseProgram(0)
 	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
 
 def prerender_bills():
+	global projection_matrix, camera_matrix
+
 	glClearColor(0.0, 0.0, 0.0, 0.0) #обязательно α=0
 
-	glMatrixMode(GL_PROJECTION)
-	glLoadMatrixf(make_ortho_matrix())
-	glMatrixMode(GL_MODELVIEW)
-	glLoadIdentity()
+	projection_matrix = make_ortho_matrix()
 
 	levels = 10
 	size = 1 << levels
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 1)
+
 	glBindTexture(GL_TEXTURE_2D_ARRAY, 1)
 	glTexStorage3D(GL_TEXTURE_2D_ARRAY, levels, GL_RGBA16F, size, size, angles // 2 + 1)
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
@@ -346,20 +344,27 @@ def prerender_bills():
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
 	glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAX_ANISOTROPY, 8.0)
-	glBindTexture(GL_TEXTURE_2D, 2)
-	glTexStorage2D(GL_TEXTURE_2D, 2, GL_DEPTH_COMPONENT16, size, size)
+
+	glBindTexture(GL_TEXTURE_2D_ARRAY, 2)
+	glTexStorage3D(GL_TEXTURE_2D_ARRAY, levels, GL_DEPTH_COMPONENT16, size, size, angles // 2 + 1)
+	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
+	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+	glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAX_ANISOTROPY, 8.0)
+
 	glViewport(0, 0, size, size)
 	for view in range(angles // 2 + 1):
-		glLoadMatrixf(glm.rotate(mat4(1.0), float((0.5 - 1.0 * view / angles) * math.pi), vec3(1.0, 0.0, 0.0)))
+		camera_matrix = glm.translate(glm.rotate(mat4(1.0), float((0.5 - 1.0 * view / angles) * math.pi), vec3(1.0, 0.0, 0.0)), vec3(0.0, 0.0, -0.5))
 		glFramebufferTextureLayer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, 1, 0, view)
-		glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, 2, 0)
+		glFramebufferTextureLayer(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, 2, 0, view)
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-		#render_tripod()
-		glTranslatef(0.0, 0.0, -0.5)
 		render_thing()
+
 	glInvalidateFramebuffer(GL_DRAW_FRAMEBUFFER, 1, [GL_DEPTH_ATTACHMENT])
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
 	glGenerateTextureMipmap(1)
+	glGenerateTextureMipmap(2)
 
 def resize_window(wnd, width: int, height: int):
 	global projection_matrix
@@ -391,8 +396,8 @@ def main():
 	glfw.set_window_size_callback(window, resize_window)
 	t0 = glfw.get_time()
 	while not glfw.window_should_close(window):
-		update0()
 		glfw.poll_events()
+		update0()
 		render()
 		glfw.swap_buffers(window)
 		t1 = glfw.get_time()
