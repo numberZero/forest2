@@ -10,8 +10,10 @@ import numpy as np
 import numpy.random as rnd
 from OpenGL.GL import *
 from OpenGL.error import Error
-from OpenGL.arrays.formathandler import FormatHandler
 from glm import vec2, vec3, vec4, mat2, mat3, mat4
+
+import fps_meter
+import glm_pyogl
 
 TRULY_ISOMETRIC = False
 FLY_CONTROLS = False
@@ -28,63 +30,6 @@ view_count = hsteps_ends[-1]
 format, pixel_size = GL_RGB5_A1, 2
 #format, pixel_size = GL_RGBA8, 4
 #format, pixel_size = GL_RGBA16F, 8
-
-class VectorHandler(FormatHandler):
-	dataPointer = staticmethod(glm.value_ptr)
-
-	def __init__(self, typ, l):
-		self.glm_type = typ
-		self.ctype = ctypes.c_float * l
-		self.l = l
-
-	def arrayToGLType(self, array, typeCode=None):
-		return GL_FLOAT
-
-	def arraySize(self, array, typeCode=None):
-		return self.l
-
-	def arrayByteCount(self, array, typeCode=None):
-		return self.l * 4
-
-	def asArray(self, value, typeCode=None):
-		return self.ctype(*value.to_tuple())
-
-	def unitSize(self, value, typeCode=None):
-		return self.l
-
-class MatrixHandler(FormatHandler):
-	dataPointer = staticmethod(glm.value_ptr)
-
-	def __init__(self, typ, w, h):
-		self.glm_type = typ
-		self.ctype = ctypes.c_float * (w * h)
-		self.w = w
-		self.h = h
-		self.l = w * h
-
-	def arrayToGLType(self, array, typeCode=None):
-		return GL_FLOAT
-
-	def arraySize(self, array, typeCode=None):
-		return self.l
-
-	def arrayByteCount(self, array, typeCode=None):
-		return self.l * 4
-
-	def asArray(self, value, typeCode=None):
-		return self.ctype(*sum(value.to_tuple(), ()))
-
-	def unitSize(self, value, typeCode=None):
-		return self.l
-
-for l in range(2, 5):
-	typ = getattr(glm, f'vec{l}')
-	VectorHandler(typ, l).register((typ,))
-
-for w in range(2, 5):
-	for h in range(2, 5):
-		typ = getattr(glm, f'mat{w}x{h}')
-		MatrixHandler(typ, w, h).register((typ,))
 
 def make_camera_orientation_matrix(yaw: float, pitch: float = 0.0, roll: float = 0.0):
 	from math import sin, cos
@@ -211,6 +156,8 @@ else:
 	rotation_ypr = vec3(135.0, -30.0, 0.0)
 	position = vec3(1.0, 1.0, 0.816) # sqrt(2)⋅tan(30°) = sqrt(2/3)
 
+fpsmeter = fps_meter.FPSMeter(fps_meter.TimeMeter2)
+
 def update(dt: float):
 	global position, rotation_ypr
 	vel = 3.0
@@ -241,6 +188,9 @@ def update(dt: float):
 		if glfw.get_key(window, glfw.KEY_DOWN): rotation_ypr.y -= dt * rvel
 	rotation_ypr.y = glm.clamp(rotation_ypr.y, -80.0, 80.0)
 	rotation_ypr.z = glm.clamp(rotation_ypr.z, -60.0, 60.0)
+
+	fpsmeter.next_frame(dt)
+	glfw.set_window_title(window, f'{fpsmeter.fps:.1f} FPS in Forest1')
 
 def update0():
 	global camera_matrix, move_matrix
@@ -538,75 +488,6 @@ def main():
 if __name__ == "__main__":
 	app_root = os.path.dirname(__file__)
 	main()
-
-#import os, time
-#from array import array
-#import moderngl
-#import moderngl_window
-#from OpenGL.GL import *
-#import numpy as np
-#import math
-#import glm
-#from math import *
-#from glm import *
-
-#class TimeMeterF:
-	#def __init__(self, frame_count: int = 64):
-		#self.running_average = 0.0
-		#self._frame_id = 0
-		#self._frame_times = np.full((frame_count), 1.0)
-		#x = np.linspace(-1.0, 1.0, endpoint = False, num = frame_count) + 0.5 / frame_count
-		#self._weights = np.exp(-4.0 * x**2)
-
-	#def next_frame(self, frame_time: float):
-		#self._frame_times[self._frame_id] = frame_time
-		#self._frame_id += 1
-		#self._frame_id %= len(self._frame_times)
-		#self.running_average = np.average(self._frame_times, weights=self._weights)
-
-#class TimeMeter1:
-	#def __init__(self, sensitivity = 2.0):
-		#self.sensitivity = sensitivity
-		#self.running_average = 0.0
-
-	#def next_frame(self, frame_time: float):
-		#c = math.exp(-self.sensitivity * frame_time)
-		#self.running_average = c * self.running_average + (1 - c) * frame_time
-
-#class TimeMeter2:
-	#def __init__(self, sensitivity = 8.0):
-		#self.sensitivity = sensitivity
-		#self.running_average = 0.0
-		#self.running_average_vel = 0.0
-
-	#def next_frame(self, dt: float):
-		#a = dt - self.running_average
-		#self.running_average_vel += self.sensitivity**2 * dt * a
-		#c = math.exp(-2.0 * self.sensitivity * dt)
-		#self.running_average_vel = c * self.running_average_vel
-		#self.running_average += dt * self.running_average_vel
-
-#def FPSMeter(time_meter_class, *args, **kwargs):
-	#class FPSMeter(time_meter_class):
-		#def __init__(self, *args, **kwargs):
-			#super().__init__(*args, **kwargs)
-			#self.running_average = 1.0
-
-		#@property
-		#def fps(self):
-			#return 1.0 / self.running_average
-	#return FPSMeter(*args, **kwargs)
-
-	#def render(self, time, frame_time):
-		#if frame_time > 0:
-			#self.fps_meter.next_frame(frame_time)
-			#self.wnd.title = f'{self.fps_meter.fps:.1f} FPS in {self.title}'
-		##self.prog['mvp'].value = (
-			##1, 0, 0, 0,
-			##0, 0, 1, 0,
-			##0, 1, 0, 0,
-			##0, -0.5, 0, 1)
-		##self.tree.render(moderngl.LINES)
 
 	#stage_map = {
 		#'v': 'vertex',
