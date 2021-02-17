@@ -70,29 +70,18 @@ void main() {
 	vec3 world_offset_base_center = vec3(0.0, 0.0, 0.5);
 	float texture_offset_base_center = 0.5 * sin(v_angle);
 
-	vec3 r = rel_position - u * dot(u, rel_position);
-	vec3 h = world_offset_base_center;
-	float sobc_num = dot(r, h) * dot(v, h) - dot(r, v) * dot(h, h);
-	float sobc_den = dot(r, h) - dot(r, v) * dot(h, v);
-
-	float v_scale = sobc_num / (sobc_den * texture_offset_base_center);
-	if (v_view_angle < 1.0) {
-		if (v_view_angle < 0.5)
-			v_scale = 1.0;
-		else
-			v_scale = mix(1.0, v_scale, 2.0 * clamp(v_view_angle, 0.5, 1.0) - 1.0);
-	}
+	vec4 cpos = vec4(camera_matrix * (rel_position + world_offset_base_center), 1.0);
+	vec4 cpos_view = projection_matrix * cpos;
 
 	for (int vid = 0; vid < 4; vid++) {
 		vec2 vertex = vec2(verts[vid]);
 		vec2 p = vertex * 2.0 - 1.0;
-
-		if (abs(sobc_den) > 1.0e-3) {
-			p.y *= clamp(v_scale, 0.5, 1.5);
-		}
+		p.y += texture_offset_base_center;
 		vec3 pos = u * p.x + v * p.y;
-		vec4 spos = vec4(camera_matrix * (rel_position + pos + world_offset_base_center), 1.0);
+		vec4 spos = vec4(camera_matrix * (rel_position + pos), 1.0);
 		gl_Position = projection_matrix * spos;
+		gl_Position.z = cpos_view.z * gl_Position.w / cpos_view.w;
+
 		delta = clamp(v_view_angle, 0.0, 1.0);
 		uv = vertex;
 		layer = view;
