@@ -35,11 +35,12 @@ void main() {
 	float v_angle = atan(length(rel_position.xy), -1.0-rel_position.z);
 	float off0 = sin(v_angle);
 
-	int view = int(round(v_angle / PI * angles));
+	int view = clamp(int(round(v_angle / PI * angles)), 0, angles / 2);
 	float angle = float(view) * PI / angles;
 	float off1 = sin(angle);
 
-	vec2 dir = normalize(transpose(camera_matrix)[1].xy);
+// 	vec2 camera_direction = normalize(transpose(camera_matrix)[1].xy);
+	vec2 dir = normalize(rel_position.xy);
 	vec3 u = vec3(-dir.y, dir.x, 0.0);
 	vec3 v = vec3(cos(angle) * dir, sin(angle));
 
