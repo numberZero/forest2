@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 from sys import argv
+import os.path
 import re
 import glm
 import numpy as np
@@ -48,15 +49,23 @@ class ObjFile:
 		nverts = len(self.vmap)
 		ninds = len(self.indices)
 		print(f'{nverts} vertices, {ninds} indices in object {self.oname}')
+		itype = 'uint16'
 		if nverts > 65536:
-			print('Oops, more than 64ki vertices in an object. That\'s not supported.')
-		indices = np.array(self.indices, dtype='uint16')
+			print('Oops, more than 64ki vertices in an object. Unsupported.')
+			return # FIXME
+			itype = 'uint32'
+		indices = np.array(self.indices, dtype=itype)
 		vmap = np.ndarray((nverts, 3), dtype='int')
 		for i, v in enumerate(self.vmap.keys()):
 			vmap[i] = v
 		vmap -= 1
-		vertices = np.concatenate([np.array(self.a[a])[vmap[:, a]] for a in range(3)], axis=1)
+		vertices = np.concatenate([np.array(self.a[a], dtype='float32')[vmap[:, a]] for a in range(3)], axis=1)
 		assert(vertices.shape == (nverts, 8))
+		self.objects.append({
+			'name': self.oname,
+			'vertices': vertices,
+			'indices': indices,
+			})
 
 	def __init__(self):
 		self.v = []
@@ -85,16 +94,9 @@ for filename in argv[1:]:
 	print(f'Importing {filename}')
 	with open(filename, 'r') as f:
 		lines = f.readlines()
+	name, _ = os.path.splitext(os.path.basename(filename))
 	f = ObjFile()
 	f.load(lines)
-
-{
-	'mtllib': ['maple.mtl'],
-	'o': ['leaves.001_leaves.004'],
-	'v': ['0.046464', '0.192974', '1.853366'],
-	'vt': ['0.600000', '0.666667'],
-	'vn': ['0.4806', '0.7007', '-0.5272'],
-	'usemtl': ['Material.001'],
-	's': ['off'],
-	'f': ['73267/75891/26923', '73272/75895/26923', '73271/75896/26923', '73270/75892/26923']
-}
+	for k, obj in enumerate(f.objects):
+		for aname in 'vertices', 'indices':
+			obj[aname].tofile(f'{name}.{k}.{aname[0]}')

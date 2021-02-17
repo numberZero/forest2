@@ -1,8 +1,6 @@
 #!/usr/bin/python3
 
 import os, os.path
-if 'WAYLAND_DISPLAY' in os.environ:
-	os.environ['PYOPENGL_PLATFORM'] = 'egl' # PyOpenGL такого не умеет, WTF?
 import math
 import ctypes
 import glm
@@ -125,7 +123,7 @@ def make_rescale_matrix(width: float, height: float):
 		0.0, 0.0, 0.0, 1.0,
 	)
 
-def read_file(name):
+def read_file(name) -> bytes:
 	with open(os.path.join(app_root, name), 'rb') as f:
 		return f.read()
 
@@ -148,6 +146,24 @@ def link_program(*shaders):
 		raise Error('Shader compilation error: %s\n' % glGetProgramInfoLog(program))
 	return program
 
+def load_mesh(name, parts = 2):
+	mesh = []
+	for part in range(parts):
+		index_data = read_file(f'{name}.{part}.i')
+		vertex_data = read_file(f'{name}.{part}.v')
+		icount = len(index_data) // 2
+		vcount = len(vertex_data) // 32
+		ibuf, vbuf = glGenBuffers(2)
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, ibuf)
+		glBufferStorage(GL_SHADER_STORAGE_BUFFER, len(index_data), index_data, 0)
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, vbuf)
+		glBufferStorage(GL_SHADER_STORAGE_BUFFER, len(vertex_data), vertex_data, 0)
+		glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0)
+		mesh.append((vbuf, ibuf, icount))
+	return mesh
+
+meshes = {}
+
 def init():
 	global program_mesh, program_bill, thing
 	program_mesh = link_program(
@@ -161,14 +177,16 @@ def init():
 	)
 	glEnable(GL_BLEND)
 	glEnable(GL_FRAMEBUFFER_SRGB)
-	#glEnable(GL_MULTISAMPLE)
 	glEnable(GL_DEPTH_TEST)
 	glEnable(GL_LINE_SMOOTH)
 	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
 	thing = make_thing()
+	for kind in 'maple', 'pine', 'willow':
+		meshes[kind] = load_mesh(kind, 2)
 	prerender_bills()
 	prepare_instances()
 	glClearColor(0.0, 0.0, 0.2, 1.0)
+	glEnable(GL_MULTISAMPLE)
 
 if TRULY_ISOMETRIC:
 	rotation_ypr = vec3(135.0, -35.26, 0.0)
@@ -267,8 +285,8 @@ def make_thing(size = 1.0, branches = 128, seed = 0):
 def render_mesh(mesh):
 	glLineWidth(2.5)
 	glUseProgram(program_mesh)
-	glUniformMatrix4fv(0, 1, GL_FALSE, projection_matrix)
-	glUniformMatrix4fv(1, 1, GL_FALSE, camera_matrix)
+	glUniformMatrix4fv(0, 1, GL_FALSE, projection_matrix * camera_matrix)
+	#glUniformMatrix4fv(1, 1, GL_FALSE, camera_matrix)
 	bufs, ibuf = mesh
 	for k, buf in enumerate(bufs):
 		glVertexAttribPointer(k, buf.shape[1], GL_FLOAT, GL_FALSE, 0, buf)
@@ -282,16 +300,25 @@ def render_mesh(mesh):
 def render_thing():
 	render_mesh(thing)
 
-def prepare_instances():
-	global verts
+def prepare_instances(gsize = 25):
+	global obuf, ocount
+	n = 2 * gsize + 1
 	verts = np.stack([
-		np.broadcast_to(np.linspace(-100.0, 100.0, 201), (201, 201)),
-		np.broadcast_to(np.linspace(-100.0, 100.0, 201), (201, 201)).transpose(),
-		np.zeros((201, 201)),
-		np.ones((201, 201)),
+		np.broadcast_to(np.linspace(-100.0, 100.0, n), (n, n)),
+		np.broadcast_to(np.linspace(-100.0, 100.0, n), (n, n)).transpose(),
+		np.zeros((n, n)),
+		np.ones((n, n)),
 		], axis=2).reshape((-1, 4))
 	rng = rnd.default_rng()
 	rng.shuffle(verts)
+	ocount = len(verts)
+	verts = np.array(verts, dtype='float32')
+	obuf = glGenBuffers(1)
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, obuf)
+	glBufferStorage(GL_SHADER_STORAGE_BUFFER, len(verts) * 16, verts, 0)
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0)
+
+model_matrix = make_ortho_matrix()
 
 def render():
 	time = glfw.get_time()
@@ -300,36 +327,51 @@ def render():
 	glLoadMatrixf(camera_matrix)
 	render_tripod()
 
-	n = len(verts)
-	m = n // 5
+	n = ocount
+	m = n // 50
 
-	glLineWidth(2.5)
 	glUseProgram(program_mesh)
-	glUniformMatrix4fv(0, 1, GL_FALSE, projection_matrix)
-	glUniformMatrix4fv(1, 1, GL_FALSE, camera_matrix)
-	bufs, ibuf = thing
-	for k, buf in enumerate(bufs):
-		glVertexAttribPointer(k, buf.shape[1], GL_FLOAT, GL_FALSE, 0, buf)
-		glEnableVertexAttribArray(k)
-	glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 16, verts)
-	glVertexAttribDivisor(2, 1)
-	glEnableVertexAttribArray(2)
-	glEnable(GL_PRIMITIVE_RESTART)
-	glPrimitiveRestartIndex(65535)
-	glDrawElementsInstanced(GL_LINE_STRIP, len(ibuf), GL_UNSIGNED_SHORT, ibuf, m)
-	glDrawElements(GL_LINE_STRIP, len(ibuf), GL_UNSIGNED_SHORT, ibuf)
-	for k, buf in enumerate(bufs):
-		glDisableVertexAttribArray(k)
-	glDisableVertexAttribArray(2)
+	glUniformMatrix4fv(0, 1, GL_FALSE, projection_matrix * camera_matrix)
+	glUniformMatrix4fv(1, 1, GL_FALSE, model_matrix)
 
-	glUseProgram(0)
-	glColor3f(0.0, 0.1, 0.0)
-	glBegin(GL_QUADS)
-	glVertex2f(-1000.0, -1000.0)
-	glVertex2f(-1000.0,  1000.0)
-	glVertex2f( 1000.0,  1000.0)
-	glVertex2f( 1000.0, -1000.0)
-	glEnd()
+	colors = [(0.5, 0.5, 0.5), (0.3, 0.5, 0.0)]
+
+	glEnableVertexAttribArray(0)
+	glEnableVertexAttribArray(2)
+	glEnableVertexAttribArray(3)
+	glVertexAttribDivisor(2, 1)
+
+	for (vbuf, ibuf, count), color in zip(meshes['maple'], colors):
+		glVertexAttrib3f(1, *color)
+
+		glBindBuffer(GL_ARRAY_BUFFER, vbuf)
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 32, ctypes.c_void_p(0))
+
+		glBindBuffer(GL_ARRAY_BUFFER, obuf)
+		glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(0))
+
+		glBindBuffer(GL_ARRAY_BUFFER, vbuf)
+		glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 32, ctypes.c_void_p(20))
+		glBindBuffer(GL_ARRAY_BUFFER, 0)
+
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibuf)
+		glDrawElementsInstanced(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, ctypes.c_void_p(0), m)
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
+
+	glVertexAttribDivisor(2, 0)
+	glDisableVertexAttribArray(0)
+	glDisableVertexAttribArray(2)
+	glDisableVertexAttribArray(3)
+
+	#glUseProgram(0)
+	#glColor3f(0.0, 0.1, 0.0)
+	#glBegin(GL_QUADS)
+	#glVertex2f(-1000.0, -1000.0)
+	#glVertex2f(-1000.0,  1000.0)
+	#glVertex2f( 1000.0,  1000.0)
+	#glVertex2f( 1000.0, -1000.0)
+	#glEnd()
+
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
 	glUseProgram(program_bill)
 	glUniformMatrix4fv(0, 1, GL_FALSE, projection_matrix)
@@ -339,7 +381,9 @@ def render():
 	glVertexAttrib2f(1, 1.0, 1.0)
 	glUniform1i(3, angles)
 	glEnableVertexAttribArray(0)
-	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, verts)
+	glBindBuffer(GL_ARRAY_BUFFER, obuf)
+	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, 0)
+	glBindBuffer(GL_ARRAY_BUFFER, 0)
 	glDrawArrays(GL_POINTS, m, n - m)
 	glDisableVertexAttribArray(0)
 	glUseProgram(0)
@@ -407,7 +451,7 @@ def main():
 	glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_COMPAT_PROFILE)
 	glfw.window_hint(glfw.CONTEXT_ROBUSTNESS, glfw.LOSE_CONTEXT_ON_RESET)
 	glfw.window_hint(glfw.OPENGL_DEBUG_CONTEXT, True)
-	#glfw.window_hint(glfw.SAMPLES, 4)
+	glfw.window_hint(glfw.SAMPLES, 4)
 	window = glfw.create_window(1024, 768, "Forest", None, None)
 	glfw.make_context_current(window)
 	#glDebugMessageCallback(debug, nullptr)
