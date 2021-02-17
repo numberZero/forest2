@@ -11,7 +11,6 @@ void main() {
 	vec4 c = texture(tex, vec3(uv, layer));
 	if (c.a <= 0.125)
 		discard;
-// 	c.g *= delta;
 	c.a = min(c.a * 2, 1.0);
 	o_color = c;
 }

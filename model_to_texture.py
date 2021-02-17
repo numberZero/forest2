@@ -15,17 +15,19 @@ from glm import vec2, vec3, vec4, mat2, mat3, mat4
 
 TRULY_ISOMETRIC = False
 FLY_CONTROLS = False
-circle_steps = 32
-circle_step = 2 * math.pi / circle_steps
-vsteps = circle_steps // 4 + 1
-#hsteps = np.array([max(1, int(circle_steps * math.sin(k * circle_step))) for k in range(vsteps)], dtype='uint32')
-hsteps = np.array([64 for k in range(vsteps)], dtype='uint32')
-hsteps_ends = np.cumsum(hsteps)
+h_circle_steps = 64
+v_halfcircle_steps = 32
+levels = 8
+v_step = math.pi / v_halfcircle_steps
+vsteps = v_halfcircle_steps // 2 + 1
+hsteps = np.array([max(1, int(h_circle_steps * math.sin(k * v_step))) for k in range(vsteps)], dtype='uint32')
+hsteps_ends = np.cumsum(hsteps, dtype='uint32')
 view_count = hsteps_ends[-1]
-print(f'{hsteps} ({view_count} total)')
-print(hsteps_ends)
 
-angles = 32
+#format, pixel_size = GL_R3_G3_B2, 1
+format, pixel_size = GL_RGB5_A1, 2
+#format, pixel_size = GL_RGBA8, 4
+#format, pixel_size = GL_RGBA16F, 8
 
 class VectorHandler(FormatHandler):
 	dataPointer = staticmethod(glm.value_ptr)
@@ -368,12 +370,14 @@ def render():
 	glBindTextureUnit(0, 1)
 	glBindTextureUnit(1, 2)
 	glVertexAttrib2f(1, 1.0, 1.0)
-	glUniform1i(3, angles)
+	glUniform1i(3, v_halfcircle_steps)
 	glEnableVertexAttribArray(0)
 	glBindBuffer(GL_ARRAY_BUFFER, obuf)
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(0))
 	glBindBuffer(GL_ARRAY_BUFFER, 0)
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, hstb)
 	glDrawArrays(GL_POINTS, m, n - m)
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0)
 	glDisableVertexAttribArray(0)
 	glUseProgram(0)
 	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
@@ -385,13 +389,12 @@ def prerender_bills():
 
 	projection_matrix = make_ortho_matrix()
 
-	levels = 8
 	size = 1 << levels
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 1)
 
 	glBindTexture(GL_TEXTURE_2D_ARRAY, 1)
-	#glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGBA8, size, size, view_count)
-	glTexStorage3D(GL_TEXTURE_2D_ARRAY, levels, GL_RGBA16F, size, size, view_count)
+	#glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, format, size, size, view_count)
+	glTexStorage3D(GL_TEXTURE_2D_ARRAY, levels, format, size, size, view_count)
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
@@ -411,10 +414,9 @@ def prerender_bills():
 	glViewport(0, 0, size, size)
 	view = 0
 	for v in range(vsteps):
-		va = v * circle_step
+		va = v * v_step
 		h_step_count = hsteps[v]
 		h_step = 2 * math.pi / h_step_count
-		print(f'Base view for angle {v * 360 / circle_steps}° is {view}')
 		for u in range(h_step_count):
 			ha = u * h_step
 			camera_matrix = glm.translate(
@@ -432,6 +434,18 @@ def prerender_bills():
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 			render_thing()
 			view += 1
+	assert(view == view_count)
+
+	image_size = size**2
+	total_layer_size = pixel_size * image_size / 0.75 # 0.75 for mipmaps
+	total_gram = view_count * total_layer_size
+	print(f'{total_gram / 1024**2} MiB GPU RAM used for the layers')
+
+	global hstb
+	hstb = glGenBuffers(1)
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, hstb)
+	glBufferStorage(GL_SHADER_STORAGE_BUFFER, 4 * len(hsteps_ends), hsteps_ends, 0)
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0)
 
 	glInvalidateFramebuffer(GL_DRAW_FRAMEBUFFER, 1, [GL_DEPTH_ATTACHMENT])
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
