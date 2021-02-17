@@ -177,7 +177,7 @@ def load_mesh(name, parts = 2):
 meshes = {}
 
 def init():
-	global program_mesh, program_bill
+	global program_mesh, program_bill, program_split
 	program_mesh = link_program(
 		compile_shader(GL_VERTEX_SHADER, read_file("mesh.v.glsl")),
 		compile_shader(GL_FRAGMENT_SHADER, read_file("mesh.f.glsl")),
@@ -186,6 +186,9 @@ def init():
 		compile_shader(GL_VERTEX_SHADER, read_file("bill.v.glsl")),
 		compile_shader(GL_GEOMETRY_SHADER, read_file("bill.g.glsl")),
 		compile_shader(GL_FRAGMENT_SHADER, read_file("bill.f.glsl")),
+	)
+	program_split = link_program(
+		compile_shader(GL_COMPUTE_SHADER, read_file("split.c.glsl")),
 	)
 	glEnable(GL_BLEND)
 	glEnable(GL_FRAMEBUFFER_SRGB)
@@ -196,6 +199,7 @@ def init():
 		meshes[kind] = load_mesh(kind, 2)
 	prerender_bills()
 	prepare_instances()
+	prepare_split()
 	glClearColor(0.0, 0.0, 0.2, 1.0)
 	glEnable(GL_MULTISAMPLE)
 	glDepthFunc(GL_LEQUAL)
@@ -314,6 +318,30 @@ def prepare_instances(spacing = 2.0, gsize = 25):
 	glBufferStorage(GL_SHADER_STORAGE_BUFFER, len(verts) * 16, verts, 0)
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0)
 
+def prepare_split():
+	global indbuf, nbuf, fbuf
+	indirects = np.array([
+		# near
+		0, # count
+		0, # instance count
+		0, # first index
+		0, # base vertex
+		0, # base instance
+		# far
+		0, # count
+		1, # instance count
+		0, # first
+		0, # base instance
+		], dtype='uint32')
+	indbuf, nbuf, fbuf = glGenBuffers(3)
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, nbuf)
+	glBufferStorage(GL_SHADER_STORAGE_BUFFER, ocount * 16, None, 0)
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, fbuf)
+	glBufferStorage(GL_SHADER_STORAGE_BUFFER, ocount * 16, None, 0)
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, indbuf)
+	glBufferStorage(GL_SHADER_STORAGE_BUFFER, len(indirects) * 4, indirects, GL_DYNAMIC_STORAGE_BIT)
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0)
+
 def render():
 	time = glfw.get_time()
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
@@ -321,6 +349,19 @@ def render():
 	glLoadMatrixf(camera_matrix)
 	render_tripod()
 
+	glUseProgram(program_split)
+	glUniform3fv(0, 1, position)
+	#glUniform1f(1, 1, threshold)
+	glBindBuffer(GL_DRAW_INDIRECT_BUFFER, indbuf)
+	glBufferSubData(GL_DRAW_INDIRECT_BUFFER, 4, ctypes.c_uint32(0))
+	glBufferSubData(GL_DRAW_INDIRECT_BUFFER, 20, ctypes.c_uint32(0))
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, obuf)
+	glBindBufferRange(GL_ATOMIC_COUNTER_BUFFER, 1, indbuf, 0, 20)
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, nbuf)
+	glBindBufferRange(GL_ATOMIC_COUNTER_BUFFER, 2, indbuf, 20, 16)
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, fbuf)
+	glDispatchCompute(ocount, 1, 1)
+	glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT | GL_COMMAND_BARRIER_BIT)
 	n = ocount
 	m = n // 5
 
@@ -333,7 +374,7 @@ def render():
 	glEnableVertexAttribArray(3)
 	glVertexAttribDivisor(2, 1)
 
-	glBindBuffer(GL_ARRAY_BUFFER, obuf)
+	glBindBuffer(GL_ARRAY_BUFFER, nbuf)
 	glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(0))
 
 	for (vbuf, ibuf, count), color in zip(meshes['maple'], colors):
@@ -345,7 +386,8 @@ def render():
 		glBindBuffer(GL_ARRAY_BUFFER, 0)
 
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibuf)
-		glDrawElementsInstanced(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, ctypes.c_void_p(0), m)
+		glBufferSubData(GL_DRAW_INDIRECT_BUFFER, 0, ctypes.c_uint32(count))
+		glDrawElementsIndirect(GL_TRIANGLES, GL_UNSIGNED_SHORT, ctypes.c_void_p(0))
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
 
 	glVertexAttribDivisor(2, 0)
@@ -372,15 +414,16 @@ def render():
 	glVertexAttrib2f(1, 1.0, 1.0)
 	glUniform1i(3, v_halfcircle_steps)
 	glEnableVertexAttribArray(0)
-	glBindBuffer(GL_ARRAY_BUFFER, obuf)
+	glBindBuffer(GL_ARRAY_BUFFER, fbuf)
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(0))
 	glBindBuffer(GL_ARRAY_BUFFER, 0)
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, hstb)
-	glDrawArrays(GL_POINTS, m, n - m)
+	glDrawArraysIndirect(GL_POINTS, ctypes.c_void_p(20))
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0)
 	glDisableVertexAttribArray(0)
 	glUseProgram(0)
 	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
+	glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0)
 
 def prerender_bills():
 	global projection_matrix, camera_matrix
