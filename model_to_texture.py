@@ -393,6 +393,7 @@ def prerender_bills():
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
 	glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAX_ANISOTROPY, 8.0)
+	glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_LOD_BIAS, -0.5)
 
 	glBindTexture(GL_TEXTURE_2D_ARRAY, 2)
 	glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_DEPTH_COMPONENT16, size, size, view_count)
@@ -466,7 +467,7 @@ def main():
 	glfw.window_hint(glfw.OPENGL_PROFILE, glfw.OPENGL_COMPAT_PROFILE)
 	glfw.window_hint(glfw.CONTEXT_ROBUSTNESS, glfw.LOSE_CONTEXT_ON_RESET)
 	glfw.window_hint(glfw.OPENGL_DEBUG_CONTEXT, True)
-	glfw.window_hint(glfw.SAMPLES, 4)
+	glfw.window_hint(glfw.SAMPLES, 8)
 	window = glfw.create_window(1024, 768, "Forest", None, None)
 	glfw.make_context_current(window)
 	#glDebugMessageCallback(debug, nullptr)
