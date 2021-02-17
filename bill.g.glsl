@@ -16,14 +16,15 @@ in PerVertex
 	in vec2 size;
 } vert[];
 
-out vec2 uv1, uv2;
-out flat int layer1, layer2;
-out flat float delta;
+out vec2 uv;
+out float delta;
+out flat int layer;
 
 vec3 position;
 vec2 size;
 
 const ivec2 verts[4] = {{0, 0}, {1, 0}, {0, 1}, {1, 1}};
+const int ends[9] = {1, 7, 19, 36, 58, 84, 113, 144, 176};
 
 void main() {
 	const float single_view_angle = PI / angles;
@@ -32,68 +33,68 @@ void main() {
 	size = vert[0].size;
 	vec3 rel_position = position - camera_position;
 	vec3 visual_position = camera_matrix * rel_position;
-	float v_angle = atan(length(rel_position.xy), -1.0-rel_position.z);
-	float off0 = sin(v_angle);
 
-	int view = clamp(int(round(v_angle / PI * angles)), 0, angles / 2);
-	float angle = float(view) * PI / angles;
-	float off1 = sin(angle);
+	int view = 0;
+	vec3 u, v;
 
-// 	vec2 camera_direction = normalize(transpose(camera_matrix)[1].xy);
-	vec2 dir = normalize(rel_position.xy);
-	vec3 u = vec3(-dir.y, dir.x, 0.0);
-	vec3 v = vec3(cos(angle) * dir, sin(angle));
+	int v_view_per_halfcircle = 16;
+	int v_view_max = v_view_per_halfcircle / 2;
+	float v_view_step = PI / v_view_per_halfcircle;
+	float v_view_angle = atan(length(rel_position.xy), -rel_position.z - 1.0); // 0 — сверху, π — снизу
+	int v_view = clamp(int(round(v_view_angle / v_view_step)), 0, v_view_max); // [0 .. v_view_max]
+	float v_angle = v_view * v_view_step;
+
+	if (v_view == 0) { // прямо сверху
+		u = vec3(1.0, 0.0, 0.0);
+		v = vec3(0.0, 1.0, 0.0);
+	} else { // v_view ∈ [1 .. v_view_max]
+// 		int h_view_base = ends[v_view - 1];
+// 		int h_view_count = ends[v_view] - h_view_base;
+		int h_view_base = v_view * 64;
+		int h_view_count = 64;
+
+		float h_view_step = 2.0 * PI / h_view_count;
+		float h_view_angle = atan(rel_position.x, rel_position.y);
+		int h_view = int(round(h_view_angle / h_view_step)) % h_view_count;
+		float h_angle = h_view * h_view_step;
+		if (h_view < 0)
+			h_view += h_view_count;
+
+		view = h_view_base + h_view;
+		vec2 dir = vec2(sin(h_angle), cos(h_angle));
+		u = vec3(dir.y, -dir.x, 0.0);
+		v = vec3(cos(v_angle) * dir, sin(v_angle));
+	}
+
+	vec3 world_offset_base_center = vec3(0.0, 0.0, 0.5);
+	float texture_offset_base_center = 0.5 * sin(v_angle);
+
+	vec3 r = rel_position - u * dot(u, rel_position);
+	vec3 h = world_offset_base_center;
+	float sobc_num = dot(r, h) * dot(v, h) - dot(r, v) * dot(h, h);
+	float sobc_den = dot(r, h) - dot(r, v) * dot(h, v);
+
+	float v_scale = sobc_num / (sobc_den * texture_offset_base_center);
+	if (v_view_angle < 1.0) {
+		if (v_view_angle < 0.5)
+			v_scale = 1.0;
+		else
+			v_scale = mix(1.0, v_scale, 2.0 * clamp(v_view_angle, 0.5, 1.0) - 1.0);
+	}
 
 	for (int vid = 0; vid < 4; vid++) {
 		vec2 vertex = vec2(verts[vid]);
 		vec2 p = vertex * 2.0 - 1.0;
-		p.y += 0.5 * off1;
-// 		vec3 pos = transpose(camera_matrix) * vec3(p.x, 0.0, p.y);
+
+		if (abs(sobc_den) > 1.0e-3) {
+			p.y *= clamp(v_scale, 0.5, 1.5);
+		}
 		vec3 pos = u * p.x + v * p.y;
-		vec4 spos = vec4(camera_matrix * (rel_position + pos), 1.0);
+		vec4 spos = vec4(camera_matrix * (rel_position + pos + world_offset_base_center), 1.0);
 		gl_Position = projection_matrix * spos;
-		uv1 = uv2 = vertex;
-		layer1 = layer2 = view;
-		delta = 0.0;
-// 		mark = 0.5 - 0.25 * off1;
+		delta = clamp(v_view_angle, 0.0, 1.0);
+		uv = vertex;
+		layer = view;
 		EmitVertex();
 	}
-/*
-
-	float view_coord = v_angle / single_view_angle;
-	int view1 = int(floor(view_coord));
-	int view2 = view1 + 1;
-	float view_frac = view_coord - view1;
-	float off1 = sin(view1 * single_view_angle);
-	float off2 = sin(view2 * single_view_angle);
-	if (off1 < off2) {
-		float o = off1;
-		off1 = off2;
-		off2 = o;
-		view1++;
-		view2--;
-		view_frac = 1.0 - view_frac;
-	}
-
-	float uvoff = 0.5 * (off1 - off2);
-	for (int vid = 0; vid < 4; vid++) {
-		vec2 vertex = vec2(verts[vid]);
-		vec3 pos = vec3(vertex * 2.0 - 1.0, 0.0);
-		if (vid < 2)
-			pos.y += 0.5 * off2;
-		else
-			pos.y += 0.5 * off1;
-		pos.z -= 0.5 * off0;
-		gl_Position = projection_matrix * vec4(pos.xzy + visual_position, 1.0);
-		uv1 = vertex;
-		uv2 = vertex;
-		if (vid < 2)
-			uv1.y -= 0.5 * uvoff;
-		else
-			uv2.y += 0.5 * uvoff;
-		layer1 = view1;
-		layer2 = view2;
-		delta = view_frac;
-		EmitVertex();
-	}*/
 }
