@@ -165,7 +165,7 @@ def load_mesh(name, parts = 2):
 meshes = {}
 
 def init():
-	global program_mesh, program_bill, thing
+	global program_mesh, program_bill
 	program_mesh = link_program(
 		compile_shader(GL_VERTEX_SHADER, read_file("mesh.v.glsl")),
 		compile_shader(GL_FRAGMENT_SHADER, read_file("mesh.f.glsl")),
@@ -180,13 +180,13 @@ def init():
 	glEnable(GL_DEPTH_TEST)
 	glEnable(GL_LINE_SMOOTH)
 	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
-	thing = make_thing()
 	for kind in 'maple', 'pine', 'willow':
 		meshes[kind] = load_mesh(kind, 2)
 	prerender_bills()
 	prepare_instances()
 	glClearColor(0.0, 0.0, 0.2, 1.0)
 	glEnable(GL_MULTISAMPLE)
+	glDepthFunc(GL_LEQUAL)
 
 if TRULY_ISOMETRIC:
 	rotation_ypr = vec3(135.0, -35.26, 0.0)
@@ -255,57 +255,41 @@ def render_tripod():
 	glVertex3f(0.0, 0.0, -1.0)
 	glEnd()
 
-def make_thing(size = 1.0, branches = 128, seed = 0):
-	rgen = random.Random(seed)
-	da = lambda: rgen.uniform(-math.pi, math.pi)
-	ddr = lambda: rgen.uniform(size / 128.0, size / 32.0)
-	ddz = lambda: size / rgen.uniform(16.0, 32.0)
-	pbuf = []
-	cbuf = []
-	ibuf = []
-	for k in range(branches):
-		a = da()
-		dir = vec2(math.cos(a), math.sin(a))
-		pos2 = vec2()
-		delta = vec2(ddr(), ddz())
-		blen = 0.0
-		while delta.y > -delta.x:
-			color = vec3(0.4 - 0.5 * blen, 0.6, 0.3 - 1.0 * blen)
-			pos = vec3(pos2.x * dir, pos2.y)
-			ibuf.append(len(pbuf))
-			pbuf.append(pos)
-			cbuf.append(color)
-			pos2 += delta
-			blen += glm.length(delta)
-			delta.y -= 1.0 / 256.0
-		ibuf.append(65535)
-	ibuf.pop()
-	return ((np.array(pbuf, dtype='float32'), np.array(cbuf, dtype='float32')), np.array(ibuf, dtype='uint16'))
-
-def render_mesh(mesh):
-	glLineWidth(2.5)
-	glUseProgram(program_mesh)
-	glUniformMatrix4fv(0, 1, GL_FALSE, projection_matrix * camera_matrix)
-	#glUniformMatrix4fv(1, 1, GL_FALSE, camera_matrix)
-	bufs, ibuf = mesh
-	for k, buf in enumerate(bufs):
-		glVertexAttribPointer(k, buf.shape[1], GL_FLOAT, GL_FALSE, 0, buf)
-		glEnableVertexAttribArray(k)
-	glEnable(GL_PRIMITIVE_RESTART)
-	glPrimitiveRestartIndex(65535)
-	glDrawElements(GL_LINE_STRIP, len(ibuf), GL_UNSIGNED_SHORT, ibuf)
-	for k, buf in enumerate(bufs):
-		glDisableVertexAttribArray(k)
+colors = [(0.5, 0.5, 0.5), (0.3, 0.5, 0.0)]
+model_matrix = glm.scale(make_ortho_matrix(), vec3(0.5))
 
 def render_thing():
-	render_mesh(thing)
+	glUseProgram(program_mesh)
+	glUniformMatrix4fv(0, 1, GL_FALSE, projection_matrix * camera_matrix)
+	glUniformMatrix4fv(1, 1, GL_FALSE, model_matrix)
 
-def prepare_instances(gsize = 25):
+	glEnableVertexAttribArray(0)
+	glEnableVertexAttribArray(3)
+	glVertexAttrib3f(2, 0.0, 0.0, 0.0)
+
+	for (vbuf, ibuf, count), color in zip(meshes['maple'], colors):
+		glVertexAttrib3f(1, *color)
+
+		glBindBuffer(GL_ARRAY_BUFFER, vbuf)
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 32, ctypes.c_void_p(0))
+		glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 32, ctypes.c_void_p(20))
+		glBindBuffer(GL_ARRAY_BUFFER, 0)
+
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibuf)
+		glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, ctypes.c_void_p(0))
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
+
+	glDisableVertexAttribArray(0)
+	glDisableVertexAttribArray(3)
+	glUseProgram(0)
+
+def prepare_instances(spacing = 2.0, gsize = 25):
 	global obuf, ocount
 	n = 2 * gsize + 1
+	x = spacing * gsize
 	verts = np.stack([
-		np.broadcast_to(np.linspace(-100.0, 100.0, n), (n, n)),
-		np.broadcast_to(np.linspace(-100.0, 100.0, n), (n, n)).transpose(),
+		np.broadcast_to(np.linspace(-x, x, n), (n, n)),
+		np.broadcast_to(np.linspace(-x, x, n), (n, n)).transpose(),
 		np.zeros((n, n)),
 		np.ones((n, n)),
 		], axis=2).reshape((-1, 4))
@@ -318,8 +302,6 @@ def prepare_instances(gsize = 25):
 	glBufferStorage(GL_SHADER_STORAGE_BUFFER, len(verts) * 16, verts, 0)
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0)
 
-model_matrix = make_ortho_matrix()
-
 def render():
 	time = glfw.get_time()
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
@@ -328,29 +310,25 @@ def render():
 	render_tripod()
 
 	n = ocount
-	m = n // 50
+	m = n // 5
 
 	glUseProgram(program_mesh)
 	glUniformMatrix4fv(0, 1, GL_FALSE, projection_matrix * camera_matrix)
 	glUniformMatrix4fv(1, 1, GL_FALSE, model_matrix)
-
-	colors = [(0.5, 0.5, 0.5), (0.3, 0.5, 0.0)]
 
 	glEnableVertexAttribArray(0)
 	glEnableVertexAttribArray(2)
 	glEnableVertexAttribArray(3)
 	glVertexAttribDivisor(2, 1)
 
+	glBindBuffer(GL_ARRAY_BUFFER, obuf)
+	glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(0))
+
 	for (vbuf, ibuf, count), color in zip(meshes['maple'], colors):
 		glVertexAttrib3f(1, *color)
 
 		glBindBuffer(GL_ARRAY_BUFFER, vbuf)
 		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 32, ctypes.c_void_p(0))
-
-		glBindBuffer(GL_ARRAY_BUFFER, obuf)
-		glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(0))
-
-		glBindBuffer(GL_ARRAY_BUFFER, vbuf)
 		glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 32, ctypes.c_void_p(20))
 		glBindBuffer(GL_ARRAY_BUFFER, 0)
 
@@ -363,14 +341,14 @@ def render():
 	glDisableVertexAttribArray(2)
 	glDisableVertexAttribArray(3)
 
-	#glUseProgram(0)
-	#glColor3f(0.0, 0.1, 0.0)
-	#glBegin(GL_QUADS)
-	#glVertex2f(-1000.0, -1000.0)
-	#glVertex2f(-1000.0,  1000.0)
-	#glVertex2f( 1000.0,  1000.0)
-	#glVertex2f( 1000.0, -1000.0)
-	#glEnd()
+	glUseProgram(0)
+	glColor3f(0.0, 0.1, 0.0)
+	glBegin(GL_QUADS)
+	glVertex2f(-1000.0, -1000.0)
+	glVertex2f(-1000.0,  1000.0)
+	glVertex2f( 1000.0,  1000.0)
+	glVertex2f( 1000.0, -1000.0)
+	glEnd()
 
 	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
 	glUseProgram(program_bill)
@@ -378,11 +356,12 @@ def render():
 	glUniformMatrix3fv(1, 1, GL_FALSE, mat3(camera_matrix))
 	glUniform3fv(2, 1, position)
 	glBindTextureUnit(0, 1)
+	glBindTextureUnit(1, 2)
 	glVertexAttrib2f(1, 1.0, 1.0)
 	glUniform1i(3, angles)
 	glEnableVertexAttribArray(0)
 	glBindBuffer(GL_ARRAY_BUFFER, obuf)
-	glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, 0)
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(0))
 	glBindBuffer(GL_ARRAY_BUFFER, 0)
 	glDrawArrays(GL_POINTS, m, n - m)
 	glDisableVertexAttribArray(0)
@@ -401,7 +380,8 @@ def prerender_bills():
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 1)
 
 	glBindTexture(GL_TEXTURE_2D_ARRAY, 1)
-	glTexStorage3D(GL_TEXTURE_2D_ARRAY, levels, GL_RGBA16F, size, size, angles // 2 + 1)
+	glTexStorage3D(GL_TEXTURE_2D_ARRAY, 1, GL_RGBA16F, size, size, angles // 2 + 1)
+	#glTexStorage3D(GL_TEXTURE_2D_ARRAY, levels, GL_RGBA16F, size, size, angles // 2 + 1)
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
 	glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)

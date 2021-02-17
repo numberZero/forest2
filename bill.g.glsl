@@ -32,7 +32,7 @@ void main() {
 	size = vert[0].size;
 	vec3 rel_position = position - camera_position;
 	vec3 visual_position = camera_matrix * rel_position;
-	float v_angle = atan(length(rel_position.xy), -rel_position.z);
+	float v_angle = atan(length(rel_position.xy), -1.0-rel_position.z);
 	float off0 = sin(v_angle);
 
 	int view = int(round(v_angle / PI * angles));
