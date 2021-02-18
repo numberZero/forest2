@@ -252,12 +252,15 @@ def prepare_instances(probs, spacing = 2.0, gsize = 25):
 	global obuf, ocount, ocounts, rad
 	n = 2 * gsize + 1
 	rad = spacing * gsize
+	dx = spacing / 2.0
 	ocount = n * n
 	rng = rnd.default_rng()
 	xx = np.broadcast_to(np.linspace(-rad, rad, n), (n, n))
 	yy = xx.transpose()
 	zz = np.zeros((n, n))
 	ww = rng.choice(len(probs), p=probs, size=(n, n))
+	xx = xx + rng.uniform(-dx, dx, (n, n))
+	yy = yy + rng.uniform(-dx, dx, (n, n))
 	ocounts = np.bincount(ww.flat)
 	verts = np.array(np.stack([xx, yy, zz, ww], axis=2).reshape((-1, 4)), dtype='float32')
 	obuf = glGenBuffers(1)
