@@ -14,6 +14,10 @@ layout(binding = 0, std430) readonly restrict buffer h_view_counts_buf {
 	int h_view_ends[];
 };
 
+layout(binding = 1, std430) readonly restrict buffer opm_buf {
+	mat4 orig_proj_matrices[];
+};
+
 in PerVertex
 {
 	in vec3 position;
@@ -44,6 +48,8 @@ void main() {
 	int v_view = clamp(int(round(v_view_angle / v_view_step)), 0, v_view_max); // [0 .. v_view_max]
 	float v_angle = v_view * v_view_step;
 
+	float h_view_angle;
+
 	if (v_view == 0) { // прямо сверху
 		u = vec3(1.0, 0.0, 0.0);
 		v = vec3(0.0, 1.0, 0.0);
@@ -52,7 +58,7 @@ void main() {
 		int h_view_count = h_view_ends[v_view] - h_view_base;
 
 		float h_view_step = 2.0 * PI / h_view_count;
-		float h_view_angle = atan(rel_position.x, rel_position.y);
+		h_view_angle = atan(rel_position.x, rel_position.y);
 		int h_view = int(round(h_view_angle / h_view_step));
 		float h_angle = h_view * h_view_step;
 		if (h_view < 0)
@@ -60,29 +66,65 @@ void main() {
 		h_view %= h_view_count; // на отрицательных числах выдаёт ересь
 
 		view = h_view_base + h_view;
-// 		h_angle = h_view_angle;
-
-		vec2 dir = vec2(sin(h_angle), cos(h_angle));
-		u = vec3(dir.y, -dir.x, 0.0);
-		v = vec3(cos(v_angle) * dir, sin(v_angle));
 	}
 
 	vec3 world_offset_base_center = vec3(0.0, 0.0, 0.5);
-	float texture_offset_base_center = 0.5 * sin(v_angle);
 
 	vec4 cpos = vec4(camera_matrix * (rel_position + world_offset_base_center), 1.0);
 	vec4 cpos_view = projection_matrix * cpos;
 
+	mat4 view_matrix = mat4(camera_matrix);
+	view_matrix[3].xyz = -camera_matrix * camera_position;
+
+	vec3 camera_direction = transpose(camera_matrix)[1];
+	vec3 direction = normalize(rel_position);
+	if (dot(direction, camera_direction) < 0.5)
+		return;
+
+	vec2 farther_horizontally = normalize(rel_position.xy);
+	vec3 key_points_model[3] = {
+		vec3(0.0, 0.0, 0.0),
+		vec3(0.0, 0.0, 1.0),
+		vec3(0.5 * farther_horizontally.y, -0.5 * farther_horizontally.x, 0.5),
+	};
+	float selector = v_view_angle * 7.0;
+	vec4 c = {1.0, 1.0, 1.0, 1.0};
+	if (selector < 1.0) {
+		key_points_model[1] = vec3(0.0, 0.5, 0.5);
+		key_points_model[2] = vec3(0.5, 0.0, 0.5);
+	} else if (selector < 2.0) {
+		float delta = selector - 1.0;
+		float angle = delta * h_view_angle;
+		vec2 dir = 0.5 * vec2(sin(angle), cos(angle));
+		key_points_model[1] = vec3(dir.x, dir.y, 0.5);
+		key_points_model[2] = vec3(dir.y, -dir.x, 0.5);
+	} else if (selector < 3.0) {
+		float delta = 3.0 - selector;
+		key_points_model[1] = mix(key_points_model[1], vec3(0.5 * farther_horizontally.x, 0.5 * farther_horizontally.y, 0.5), delta);
+	}
+
+	mat4 orig_proj_matrix = orig_proj_matrices[view];
+	vec3 key_points_world[3];
+	vec2 key_points_projected[3];
+	for (int k = 0; k < 3; k++) {
+		key_points_world[k] = position + key_points_model[k];
+		key_points_projected[k] = (orig_proj_matrix * vec4(key_points_model[k], 1.0)).xz;
+	}
+	mat3 m1, m2;
+	for (int k = 0; k < 3; k++) {
+		m1[k] = key_points_world[k];
+		m2[k] = vec3(key_points_projected[k], 1.0);
+	}
+	mat3 w = m1 * inverse(m2);
+
 	for (int vid = 0; vid < 4; vid++) {
 		vec2 vertex = vec2(verts[vid]);
-		vec2 p = vertex * 2.0 - 1.0;
-		p.y += texture_offset_base_center;
-		vec3 pos = u * p.x + v * p.y;
-		vec4 spos = vec4(camera_matrix * (rel_position + pos), 1.0);
+		vec3 pos = vec3(vertex * 2.0 - 1.0, 1.0);
+		vec4 spos = vec4(camera_matrix * (w * pos - camera_position), 1.0);
+
 		gl_Position = projection_matrix * spos;
 		gl_Position.z = cpos_view.z * gl_Position.w / cpos_view.w;
 
-		delta = clamp(v_view_angle, 0.0, 1.0);
 		uv = vertex;
 		layer = view;
 		EmitVertex();

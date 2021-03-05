@@ -129,6 +129,14 @@ def make_hstb():
 	glBufferStorage(GL_SHADER_STORAGE_BUFFER, 4 * len(hsteps_ends), hsteps_ends, 0)
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0)
 
+def make_matrix_buffer(matrices: glm.mat3x4):
+	data = np.array([m.to_list() for m in matrices], dtype='float32')
+	buf = glGenBuffers(1)
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, buf)
+	glBufferStorage(GL_SHADER_STORAGE_BUFFER, 4 * len(data.flat), data, 0)
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0)
+	return buf
+
 class Mesh:
 	pass
 meshes = []
@@ -167,6 +175,8 @@ def init():
 		tree.bill = br.render(mesh)
 		meshes.append(tree)
 	br.leave()
+	global cmb
+	cmb = make_matrix_buffer(br.matrices)
 	make_hstb()
 	prepare_instances([tree.prob for tree in meshes], 1.5, 100)
 	prepare_split()
@@ -368,6 +378,7 @@ def render():
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(0))
 	glBindBuffer(GL_ARRAY_BUFFER, 0)
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, hstb)
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, cmb)
 	for k in range(len(ocounts)):
 		glBindTextureUnit(0, meshes[k].bill)
 		glDrawArraysIndirect(GL_POINTS, ctypes.c_void_p(36 * k + 20))
