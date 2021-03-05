@@ -395,10 +395,36 @@ class BillRenderer:
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, self.fb)
 		glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, self.depth, 0)
 
+		self.make_matrices()
+
 	def leave(self):
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
 		glDeleteFramebuffers(1, [self.fb])
 		glDeleteTextures([self.depth])
+
+	def make_matrices(self):
+		matrices = []
+		view = 0
+		for v in range(vsteps):
+			va = v * v_step
+			h_step_count = hsteps[v]
+			h_step = 2 * math.pi / h_step_count
+			for u in range(h_step_count):
+				ha = u * h_step
+				camera_matrix = glm.translate(
+					glm.rotate(
+						glm.rotate(
+							mat4(1.0),
+							#float(0.0),
+							0.5 * math.pi - va,
+							vec3(1.0, 0.0, 0.0)),
+						ha,
+						vec3(0.0, 0.0, 1.0)),
+					vec3(0.0, 0.0, -0.5))
+				matrices.append(camera_matrix)
+		assert(len(matrices) == view_count)
+		self.matrices = matrices
+		return matrices
 
 	def render(self, mesh):
 		layers = glGenTextures(1)
@@ -418,41 +444,22 @@ class BillRenderer:
 		glEnableVertexAttribArray(3)
 		glVertexAttrib3f(2, 0.0, 0.0, 0.0)
 		glViewport(0, 0, self.size, self.size)
-		view = 0
-		for v in range(vsteps):
-			va = v * v_step
-			h_step_count = hsteps[v]
-			h_step = 2 * math.pi / h_step_count
-			for u in range(h_step_count):
-				ha = u * h_step
-				camera_matrix = glm.translate(
-					glm.rotate(
-						glm.rotate(
-							mat4(1.0),
-							#float(0.0),
-							0.5 * math.pi - va,
-							vec3(1.0, 0.0, 0.0)),
-						ha,
-						vec3(0.0, 0.0, 1.0)),
-					vec3(0.0, 0.0, -0.5))
-				glFramebufferTextureLayer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, layers, 0, view)
-				glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-				glUniformMatrix4fv(0, 1, GL_FALSE, self.projection_matrix * camera_matrix)
+		for view, camera_matrix in enumerate(self.matrices):
+			glFramebufferTextureLayer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, layers, 0, view)
+			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+			glUniformMatrix4fv(0, 1, GL_FALSE, self.projection_matrix * camera_matrix)
 
-				for vbuf, ibuf, count, color in mesh:
-					glVertexAttrib3f(1, *color)
+			for vbuf, ibuf, count, color in mesh:
+				glVertexAttrib3f(1, *color)
 
-					glBindBuffer(GL_ARRAY_BUFFER, vbuf)
-					glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 32, ctypes.c_void_p(0))
-					glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 32, ctypes.c_void_p(20))
-					glBindBuffer(GL_ARRAY_BUFFER, 0)
+				glBindBuffer(GL_ARRAY_BUFFER, vbuf)
+				glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 32, ctypes.c_void_p(0))
+				glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 32, ctypes.c_void_p(20))
+				glBindBuffer(GL_ARRAY_BUFFER, 0)
 
-					glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibuf)
-					glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, ctypes.c_void_p(0))
-					glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
-
-				view += 1
-		assert(view == view_count)
+				glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ibuf)
+				glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, ctypes.c_void_p(0))
+				glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
 		glDisableVertexAttribArray(0)
 		glDisableVertexAttribArray(3)
 		glUseProgram(0)
