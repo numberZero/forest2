@@ -180,7 +180,7 @@ def init():
 	make_hstb()
 	prepare_instances([tree.prob for tree in meshes], 1.5, 100)
 	prepare_split()
-	glClearColor(0.0, 0.0, 0.2, 1.0)
+	glClearColor(0.2, 0.4, 0.9, 1.0)
 	glEnable(GL_MULTISAMPLE)
 	glDepthFunc(GL_LEQUAL)
 
@@ -358,7 +358,7 @@ def render():
 	glDisableVertexAttribArray(3)
 
 	glUseProgram(0)
-	glColor3f(0.0, 0.1, 0.0)
+	glColor3f(0.05, 0.20, 0.0)
 	glBegin(GL_QUADS)
 	glVertex2f(-rad, -rad)
 	glVertex2f(-rad,  rad)

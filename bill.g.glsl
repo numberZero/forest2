@@ -3,7 +3,7 @@
 #define PI 3.1415926535897932384626433832795
 
 layout(points) in;
-layout(triangle_strip, max_vertices = 12) out;
+layout(triangle_strip, max_vertices = 6) out;
 
 layout(location = 0) uniform mat4 projection_matrix;
 layout(location = 1) uniform mat3 camera_matrix;
@@ -25,7 +25,7 @@ in PerVertex
 } vert[];
 
 out vec2 uv;
-out float delta;
+out vec4 color;
 out flat int layer;
 
 vec3 position;
@@ -125,6 +125,7 @@ void main() {
 		gl_Position = projection_matrix * spos;
 		gl_Position.z = cpos_view.z * gl_Position.w / cpos_view.w;
 
+		color = c;
 		uv = vertex;
 		layer = view;
 		EmitVertex();
