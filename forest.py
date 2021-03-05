@@ -29,8 +29,9 @@ view_count = hsteps_ends[-1]
 bill_threshold = 15.0
 
 #format, pixel_size = GL_R3_G3_B2, 1
-format, pixel_size = GL_RGB5_A1, 2
+#format, pixel_size = GL_RGB5_A1, 2
 #format, pixel_size = GL_RGBA8, 4
+format, pixel_size = GL_SRGB8_ALPHA8, 4
 #format, pixel_size = GL_RGBA16F, 8
 
 def make_camera_orientation_matrix(yaw: float, pitch: float = 0.0, roll: float = 0.0):
