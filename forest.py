@@ -3,6 +3,7 @@
 import os, os.path
 import math
 import ctypes
+import cairo
 import glm
 import glfw
 import random
@@ -204,6 +205,66 @@ class Container:
 programs = Container()
 oit = Container()
 
+class Overlay:
+	def init(self):
+		pass
+
+	def resize(self, w, h):
+		try:
+			glDeleteTextures([self.texture])
+		except AttributeError:
+			pass
+		self.surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, w, h)
+		self.texture = glGenTextures(1)
+		self.size = (w, h)
+		glBindTexture(GL_TEXTURE_2D, self.texture)
+		glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, w, h)
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+		glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, (GL_BLUE, GL_GREEN, GL_RED, GL_ALPHA))
+		glBindTexture(GL_TEXTURE_2D, 0)
+
+	def draw(self, lines = []):
+		ctx = cairo.Context(self.surface)
+		ctx.set_operator(cairo.OPERATOR_CLEAR)
+		ctx.paint()
+		ctx.set_operator(cairo.OPERATOR_OVER)
+		ctx.set_source_rgba(1.0, 1.0, 1.0, 1.0)
+		ctx.scale(1.0, -1.0)
+		ctx.translate(0.0, -self.size[1])
+		ctx.select_font_face('Nimbus Sans', cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
+		font_size = 16.0
+		line_height = 1.25 * font_size
+		x_offset = 0.5 * font_size
+		y_offset = line_height
+
+		ctx.set_font_size(font_size)
+		for j, line in enumerate(lines):
+			ctx.move_to(x_offset, y_offset + j * line_height)
+			color = ()
+			try:
+				color, line = line
+				if len(color) == 3:
+					color = (*color, 1.0)
+			except ValueError:
+				pass
+			if len(color) != 4:
+				color = (1.0, 1.0, 1.0, 1.0)
+			ctx.set_source_rgba(*color)
+			ctx.show_text(line)
+		del ctx
+		glBindTexture(GL_TEXTURE_2D, self.texture)
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, *self.size, GL_RGBA, GL_UNSIGNED_BYTE, self.surface.get_data())
+
+	def show(self):
+		glUseProgram(programs.screen_quad)
+		glBindTextureUnit(0, self.texture)
+		glDrawArrays(GL_POINTS, 0, 1)
+
+overlay = Overlay()
+
 class Mesh:
 	pass
 meshes = []
@@ -225,6 +286,11 @@ def init():
 	)
 	programs.split = link_program(
 		compile_shader(GL_COMPUTE_SHADER, read_file("split.c.glsl")),
+	)
+	programs.screen_quad = link_program(
+		compile_shader(GL_VERTEX_SHADER, read_file("empty.v.glsl")),
+		compile_shader(GL_GEOMETRY_SHADER, read_file("screen_quad.g.glsl")),
+		compile_shader(GL_FRAGMENT_SHADER, read_file("screen_quad.f.glsl")),
 	)
 	glEnable(GL_BLEND)
 	glEnable(GL_FRAMEBUFFER_SRGB)
@@ -252,6 +318,7 @@ def init():
 	prepare_instances([tree.prob for tree in meshes], 1.5, 100)
 	prepare_split()
 	prepare_oit()
+	overlay.init()
 	glClearColor(0.2, 0.4, 0.9, 1.0)
 	glEnable(GL_MULTISAMPLE)
 	glDepthFunc(GL_LEQUAL)
@@ -374,6 +441,21 @@ def prepare_split():
 
 def render():
 	time = glfw.get_time()
+	lines = []
+	lines.append(f'FPS: {fpsmeter.fps:.1f}')
+	lines.append(f'Время с запуска: {time:.0f} с')
+	ctl_mode = 'полёт' if FLY_CONTROLS else 'обычный'
+	lines.append(((0.0, 1.0, 1.0) if FLY_CONTROLS else (1.0, 1.0, 1.0), f'Режим управления «{ctl_mode}» (переключение: R)'))
+	txt = 'включён' if FLY_FORWARD else 'выключен'
+	lines.append(((1.0, 0.7, 0.0) if FLY_FORWARD else (0.8, 0.8, 0.8), f'Автополёт {txt} (переключение: F)'))
+	if glfw.get_input_mode(window, glfw.CURSOR) == glfw.CURSOR_DISABLED:
+		lines.append(f'Управление: {"стрелочки" if FLY_CONTROLS else "WASD"}, space/shift, мышь')
+		lines.append(((1.0, 0.7, 0.0), 'Мышь захвачена (освобождение по Tab)'))
+	else:
+		lines.append('Управление: WASD, space/shift, стрелочки')
+		lines.append(((0.0, 1.0, 0.0), 'Включение мышиного управления: Tab'))
+	overlay.draw(lines)
+
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 	glMatrixMode(GL_MODELVIEW)
 	glLoadMatrixf(camera_matrix)
@@ -465,17 +547,19 @@ def render():
 	glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0)
 	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
 
+	glDisable(GL_DEPTH_TEST)
 	if OIT:
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
 		glUseProgram(oit.merge)
 		glBindTextureUnit(0, oit.colors)
 		glBindTextureUnit(1, oit.transparencies)
-		glDisable(GL_DEPTH_TEST)
 		glDrawArrays(GL_POINTS, 0, 1)
-		glEnable(GL_DEPTH_TEST)
-		glDepthMask(True)
+
+	overlay.show()
 
 	glUseProgram(0)
+	glEnable(GL_DEPTH_TEST)
+	glDepthMask(True)
 
 class BillRenderer:
 	def enter(self, mip_levels):
@@ -582,6 +666,7 @@ def resize_window(wnd, width: int, height: int):
 	glMatrixMode(GL_PROJECTION)
 	glLoadMatrixf(projection_matrix)
 	prepare_oit_textures(width, height)
+	overlay.resize(width, height)
 
 def update_rotation_base():
 	rotation_ypr.y = glm.clamp(rotation_ypr.y, -80.0, 80.0)
