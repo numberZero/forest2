@@ -17,7 +17,8 @@ import glm_pyogl
 
 TRULY_ISOMETRIC = False
 FLY_CONTROLS = False
-h_circle_steps = 64
+OIT = False
+h_circle_steps = 32
 v_halfcircle_steps = 32
 levels = 8
 v_step = math.pi / v_halfcircle_steps
@@ -137,22 +138,68 @@ def make_matrix_buffer(matrices: glm.mat3x4):
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0)
 	return buf
 
+def prepare_oit():
+	oit.merge = link_program(
+		compile_shader(GL_VERTEX_SHADER, read_file("oit1.v.glsl")),
+		compile_shader(GL_GEOMETRY_SHADER, read_file("oit1.g.glsl")),
+		compile_shader(GL_FRAGMENT_SHADER, read_file("oit1.f.glsl")),
+	)
+	oit.framebuffer = glGenFramebuffers(1)
+
+def prepare_oit_textures(w, h):
+	try:
+		glDeleteTextures(2, [oit.colors, oit.transparencies])
+	except AttributeError:
+		pass
+	oit.colors, oit.transparencies = glGenTextures(2)
+
+	glBindTexture(GL_TEXTURE_2D, oit.colors)
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA16F, w, h)
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+
+	glBindTexture(GL_TEXTURE_2D, oit.transparencies)
+	glTexStorage2D(GL_TEXTURE_2D, 1, GL_R16F, w, h)
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+
+	glBindTexture(GL_TEXTURE_2D, 0)
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, oit.framebuffer)
+	glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, oit.colors, 0)
+	glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, oit.transparencies, 0)
+	glDrawBuffers([GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1])
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
+
+class Container:
+	pass
+programs = Container()
+oit = Container()
+
 class Mesh:
 	pass
 meshes = []
 
 def init():
-	global program_mesh, program_bill, program_split
-	program_mesh = link_program(
+	programs.mesh = link_program(
 		compile_shader(GL_VERTEX_SHADER, read_file("mesh.v.glsl")),
 		compile_shader(GL_FRAGMENT_SHADER, read_file("mesh.f.glsl")),
 	)
-	program_bill = link_program(
+	programs.bill = link_program(
 		compile_shader(GL_VERTEX_SHADER, read_file("bill.v.glsl")),
 		compile_shader(GL_GEOMETRY_SHADER, read_file("bill.g.glsl")),
 		compile_shader(GL_FRAGMENT_SHADER, read_file("bill.f.glsl")),
 	)
-	program_split = link_program(
+	programs.bill_oit = link_program(
+		compile_shader(GL_VERTEX_SHADER, read_file("bill.v.glsl")),
+		compile_shader(GL_GEOMETRY_SHADER, read_file("bill.g.glsl")),
+		compile_shader(GL_FRAGMENT_SHADER, read_file("bill_oit1.f.glsl")),
+	)
+	programs.split = link_program(
 		compile_shader(GL_COMPUTE_SHADER, read_file("split.c.glsl")),
 	)
 	glEnable(GL_BLEND)
@@ -180,6 +227,7 @@ def init():
 	make_hstb()
 	prepare_instances([tree.prob for tree in meshes], 1.5, 100)
 	prepare_split()
+	prepare_oit()
 	glClearColor(0.2, 0.4, 0.9, 1.0)
 	glEnable(GL_MULTISAMPLE)
 	glDepthFunc(GL_LEQUAL)
@@ -313,7 +361,7 @@ def render():
 	glLoadMatrixf(camera_matrix)
 	render_tripod()
 
-	glUseProgram(program_split)
+	glUseProgram(programs.split)
 	glUniform3fv(0, 1, position)
 	glUniform1f(1, bill_threshold)
 	glBindBuffer(GL_DRAW_INDIRECT_BUFFER, indbuf)
@@ -326,7 +374,7 @@ def render():
 	glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT | GL_COMMAND_BARRIER_BIT)
 	#print(np.frombuffer(glGetBufferSubData(GL_DRAW_INDIRECT_BUFFER, 0, 36 * 3), dtype='uint32').reshape((-1, 9)))
 
-	glUseProgram(program_mesh)
+	glUseProgram(programs.mesh)
 	glUniformMatrix4fv(0, 1, GL_FALSE, projection_matrix * camera_matrix)
 	glUniformMatrix4fv(1, 1, GL_FALSE, model_matrix)
 
@@ -366,8 +414,18 @@ def render():
 	glVertex2f( rad, -rad)
 	glEnd()
 
-	glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
-	glUseProgram(program_bill)
+	if OIT:
+		glDisable(GL_FRAMEBUFFER_SRGB)
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, oit.framebuffer)
+		glClearBufferfv(GL_COLOR, 0, (0.0, 0.0, 0.0, 0.0))
+		glClearBufferfv(GL_COLOR, 1, (1.0, 0.0, 0.0, 0.0))
+		glDisable(GL_DEPTH_TEST)
+		glBlendFunci(0, GL_ONE, GL_ONE)
+		glBlendFunci(1, GL_ZERO, GL_SRC_COLOR)
+		glUseProgram(programs.bill_oit)
+	else:
+		glUseProgram(programs.bill)
+
 	glUniformMatrix4fv(0, 1, GL_FALSE, projection_matrix)
 	glUniformMatrix3fv(1, 1, GL_FALSE, mat3(camera_matrix))
 	glUniform3fv(2, 1, position)
@@ -384,16 +442,26 @@ def render():
 		glDrawArraysIndirect(GL_POINTS, ctypes.c_void_p(36 * k + 20))
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0)
 	glDisableVertexAttribArray(0)
-	glUseProgram(0)
-	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
 	glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0)
+	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
+
+	if OIT:
+		glEnable(GL_FRAMEBUFFER_SRGB)
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
+		glUseProgram(oit.merge)
+		glBindTextureUnit(0, oit.colors)
+		glBindTextureUnit(1, oit.transparencies)
+		glDrawArrays(GL_POINTS, 0, 1)
+		glEnable(GL_DEPTH_TEST)
+
+	glUseProgram(0)
 
 class BillRenderer:
 	def enter(self, mip_levels):
 		self.levels = mip_levels
 		self.size = 1 << mip_levels
 
-		self.program = program_mesh
+		self.program = programs.mesh
 
 		self.projection_matrix = make_ortho_matrix()
 		self.model_matrix = model_matrix
@@ -491,6 +559,7 @@ def resize_window(wnd, width: int, height: int):
 	projection_matrix = make_rescale_matrix(width / m, height / m) * make_projection_matrix(2.0, 0.1)
 	glMatrixMode(GL_PROJECTION)
 	glLoadMatrixf(projection_matrix)
+	prepare_oit_textures(width, height)
 
 #void APIENTRY debug(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, GLchar const *message, void const *userParam) {
 	#std::printf("%.*s\n", (int)length, message)
