@@ -11,5 +11,4 @@ void main() {
 	if (color.a == 0.0)
 		discard;
 	o_color = vec4(1.0 * color.rgb / color.a, 1.0 - transparency);
-// 	o_color = vec4(color.a, 10.0 * color.g, 1.0 - transparency, 1.0);
 }

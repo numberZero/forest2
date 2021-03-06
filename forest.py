@@ -145,8 +145,8 @@ def make_matrix_buffer(matrices: glm.mat3x4):
 
 def prepare_oit():
 	oit.merge = link_program(
-		compile_shader(GL_VERTEX_SHADER, read_file("oit1.v.glsl")),
-		compile_shader(GL_GEOMETRY_SHADER, read_file("oit1.g.glsl")),
+		compile_shader(GL_VERTEX_SHADER, read_file("empty.v.glsl")),
+		compile_shader(GL_GEOMETRY_SHADER, read_file("screen_quad.g.glsl")),
 		compile_shader(GL_FRAGMENT_SHADER, read_file("oit1.f.glsl")),
 	)
 	oit.framebuffer = glGenFramebuffers(1)
