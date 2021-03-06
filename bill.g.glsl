@@ -40,7 +40,7 @@ void main() {
 	vec3 visual_position = camera_matrix * rel_position;
 
 	int view = 0;
-	vec3 u, v;
+	vec4 c = {1.0, 1.0, 1.0, 1.0};
 
 	int v_view_max = h_view_ends.length() - 1;
 	float v_view_step = PI / v_view_per_halfcircle;
@@ -50,10 +50,7 @@ void main() {
 
 	float h_view_angle;
 
-	if (v_view == 0) { // прямо сверху
-		u = vec3(1.0, 0.0, 0.0);
-		v = vec3(0.0, 1.0, 0.0);
-	} else { // v_view ∈ [1 .. v_view_max]
+	if (v_view != 0) { // v_view ∈ [1 .. v_view_max]
 		int h_view_base = h_view_ends[v_view - 1];
 		int h_view_count = h_view_ends[v_view] - h_view_base;
 
@@ -81,41 +78,47 @@ void main() {
 	if (dot(direction, camera_direction) < 0.5)
 		return;
 
-	vec2 farther_horizontally = normalize(rel_position.xy);
-	vec3 key_points_model[3] = {
-		vec3(0.0, 0.0, 0.0),
-		vec3(0.0, 0.0, 1.0),
-		vec3(0.5 * farther_horizontally.y, -0.5 * farther_horizontally.x, 0.5),
-	};
-	float selector = v_view_angle * 7.0;
-	vec4 c = {1.0, 1.0, 1.0, 1.0};
-	if (selector < 1.0) {
-		key_points_model[1] = vec3(0.0, 0.5, 0.5);
-		key_points_model[2] = vec3(0.5, 0.0, 0.5);
-	} else if (selector < 2.0) {
-		float delta = selector - 1.0;
-		float angle = delta * h_view_angle;
-		vec2 dir = 0.5 * vec2(sin(angle), cos(angle));
-		key_points_model[1] = vec3(dir.x, dir.y, 0.5);
-		key_points_model[2] = vec3(dir.y, -dir.x, 0.5);
-	} else if (selector < 3.0) {
-		float delta = 3.0 - selector;
-		key_points_model[1] = mix(key_points_model[1], vec3(0.5 * farther_horizontally.x, 0.5 * farther_horizontally.y, 0.5), delta);
-	}
-
 	mat4 orig_proj_matrix = orig_proj_matrices[view];
-	vec3 key_points_world[3];
-	vec2 key_points_projected[3];
-	for (int k = 0; k < 3; k++) {
-		key_points_world[k] = position + key_points_model[k];
-		key_points_projected[k] = (orig_proj_matrix * vec4(key_points_model[k], 1.0)).xz;
+
+	mat3 w;
+
+	const float v_threshold = 0.5;
+	if (v_angle < v_threshold) {
+		mat4x3 model_matrix = mat4x3(1.0);
+		model_matrix[3].xyz = position;
+
+		const float r = 0.5;
+		const float h = 0.5;
+		const float S = 4.0 * PI * r * r;
+		mat4 I = mat4(r*r * S);
+		I[2].z = (r*r/3.0 + h*h) * S;
+		I[3].z = I[2].w = h * S;
+		I[3].w = S;
+
+		mat4x3 R = mat4x3(orig_proj_matrix[0].xzw, orig_proj_matrix[1].xzw, orig_proj_matrix[2].xzw, orig_proj_matrix[3].xzw);
+		mat3x4 m = I * transpose(R) * inverse(R * I * transpose(R));
+		w = model_matrix * m;
+	} else {
+		vec2 farther_horizontally = normalize(rel_position.xy);
+		vec3 key_points_model[3] = {
+			vec3(0.0, 0.0, 0.0),
+			vec3(0.0, 0.0, 1.0),
+			vec3(0.5 * farther_horizontally.y, -0.5 * farther_horizontally.x, 0.5),
+		};
+
+		vec3 key_points_world[3];
+		vec2 key_points_projected[3];
+		for (int k = 0; k < 3; k++) {
+			key_points_world[k] = position + key_points_model[k];
+			key_points_projected[k] = (orig_proj_matrix * vec4(key_points_model[k], 1.0)).xz;
+		}
+		mat3 m1, m2;
+		for (int k = 0; k < 3; k++) {
+			m1[k] = key_points_world[k];
+			m2[k] = vec3(key_points_projected[k], 1.0);
+		}
+		w = m1 * inverse(m2);
 	}
-	mat3 m1, m2;
-	for (int k = 0; k < 3; k++) {
-		m1[k] = key_points_world[k];
-		m2[k] = vec3(key_points_projected[k], 1.0);
-	}
-	mat3 w = m1 * inverse(m2);
 
 	for (int vid = 0; vid < 4; vid++) {
 		vec2 vertex = vec2(verts[vid]);
