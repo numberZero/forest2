@@ -3,7 +3,6 @@
 layout(location = 0) uniform mat4 vp_matrix;
 layout(location = 1) uniform mat4 m_matrix = mat4(1.0);
 layout(location = 2) uniform vec3 light_dir = normalize(vec3(1.0, 1.0, 1.0));
-// const vec3 light_dir = vec3(1.0, 1.0, 1.0);
 
 layout(location = 0) in vec3 in_pos;
 layout(location = 1) in vec3 in_color;

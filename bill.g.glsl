@@ -84,7 +84,8 @@ void main() {
 
 	const float v_threshold = 0.5;
 	if (v_angle < v_threshold) {
-		mat4x3 model_matrix = mat4x3(1.0);
+		mat4x3 model_matrix = mat4x3(size.x);
+		model_matrix[2].z = size.y;
 		model_matrix[3].xyz = position;
 
 		const float r = 0.5;
@@ -109,7 +110,10 @@ void main() {
 		vec3 key_points_world[3];
 		vec2 key_points_projected[3];
 		for (int k = 0; k < 3; k++) {
-			key_points_world[k] = position + key_points_model[k];
+			vec3 kp_scaled = key_points_model[k];
+			kp_scaled.xy *= size.x;
+			kp_scaled.z *= size.y;
+			key_points_world[k] = position + kp_scaled;
 			key_points_projected[k] = (orig_proj_matrix * vec4(key_points_model[k], 1.0)).xz;
 		}
 		mat3 m1, m2;

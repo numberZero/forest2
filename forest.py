@@ -22,7 +22,8 @@ OIT = True
 MOUSE_SPEED = 0.2
 
 rotation_ypr = vec3(30.0, -15.0, 0.0)
-position = vec3(0.0, 0.0, 5.0) # sqrt(2)⋅tan(30°) = sqrt(2/3)
+position = vec3(0.0, 0.0, 10.0) # sqrt(2)⋅tan(30°) = sqrt(2/3)
+tree_scale = 2.2
 
 h_circle_steps = 32
 v_halfcircle_steps = 32
@@ -448,6 +449,7 @@ def render():
 	models, textures = np.sum(stat, axis=0)
 	lines = []
 	lines.append(((0.8, 0.8, 0.8), f'FPS: {fpsmeter.fps:.1f}, время с запуска: {time:.0f} с'))
+	lines.append(((0.8, 0.8, 0.8), f'Размер дерева: {tree_scale:.1f} (изменение: колёсико мыши)'))
 	lines.append(((1.0, 1.0, 1.0), f'Отрисовка текстурами с дальности {bill_threshold:.0f} (изменить: +/-). Отрисовано моделями: {models}, текстурами: {textures}, всего: {models + textures}'))
 	ctl_mode = 'полёт' if FLY_CONTROLS else 'обычный'
 	if glfw.get_input_mode(window, glfw.CURSOR) == glfw.CURSOR_DISABLED:
@@ -480,7 +482,7 @@ def render():
 
 	glUseProgram(programs.mesh)
 	glUniformMatrix4fv(0, 1, GL_FALSE, projection_matrix * camera_matrix)
-	glUniformMatrix4fv(1, 1, GL_FALSE, model_matrix)
+	glUniformMatrix4fv(1, 1, GL_FALSE, glm.scale(model_matrix, vec3(tree_scale)))
 
 	glEnableVertexAttribArray(0)
 	glEnableVertexAttribArray(2)
@@ -535,7 +537,7 @@ def render():
 	glUniformMatrix4fv(0, 1, GL_FALSE, projection_matrix)
 	glUniformMatrix3fv(1, 1, GL_FALSE, mat3(camera_matrix))
 	glUniform3fv(2, 1, position)
-	glVertexAttrib2f(1, 1.0, 1.0)
+	glVertexAttrib2f(1, tree_scale, tree_scale)
 	glUniform1i(3, v_halfcircle_steps)
 	glEnableVertexAttribArray(0)
 	glBindBuffer(GL_ARRAY_BUFFER, fbuf)
@@ -726,6 +728,10 @@ def handle_cursor(wnd, x: float, y: float):
 	if glfw.get_input_mode(wnd, glfw.CURSOR) == glfw.CURSOR_DISABLED:
 		moused_rotate(vec2(x, y))
 
+def handle_wheel(wnd, dx: float, dy: float):
+	global tree_scale
+	tree_scale = glm.clamp(tree_scale + 0.1 * dy, 0.1, 5.0)
+
 @GLDEBUGPROC
 def debug(source, type, id, severity, length, message, param):
 	print(message[:length])
@@ -748,6 +754,7 @@ def main():
 	glfw.set_window_size_callback(window, resize_window)
 	glfw.set_key_callback(window, handle_key)
 	glfw.set_cursor_pos_callback(window, handle_cursor)
+	glfw.set_scroll_callback(window, handle_wheel)
 	try:
 		if glfw.raw_mouse_motion_supported():
 			glfw.set_input_mode(window, glfw.RAW_MOUSE_MOTION, True)
