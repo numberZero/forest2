@@ -1,11 +1,28 @@
 #!/usr/bin/python3
 
+import subprocess
+import sys
+import importlib
+
+for modname, pipname in [
+		('cairo', 'pycairo'),
+		('glm', 'PyGLM'),
+		('glfw', 'glfw'),
+		('numpy', 'numpy'),
+		('OpenGL', 'PyOpenGL'),
+		]:
+	def _import():
+		globals()[modname] = importlib.import_module(modname)
+	try:
+		_import()
+	except ImportError:
+		subprocess.call([sys.executable, '-m', 'pip', 'install', pipname])
+		_import()
+del _import
+
 import os, os.path
 import math
 import ctypes
-import cairo # pip:pycairo
-import glm # pip:PyGLM
-import glfw # pip:glfw
 import random
 import numpy as np # pip:numpy
 import numpy.random as rnd
