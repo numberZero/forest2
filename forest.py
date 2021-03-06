@@ -463,7 +463,8 @@ def render():
 
 	glUseProgram(programs.split)
 	glUniform3fv(0, 1, position)
-	glUniform1f(1, bill_threshold)
+	glUniform2f(1, bill_threshold, 1.0)
+	glUniform3fv(2, 1, glm.transpose(camera_matrix)[1].xyz)
 	glBindBuffer(GL_DRAW_INDIRECT_BUFFER, indbuf)
 	glBufferSubData(GL_DRAW_INDIRECT_BUFFER, 0, indirects)
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, obuf)
