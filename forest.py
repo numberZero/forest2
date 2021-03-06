@@ -605,8 +605,8 @@ def handle_key(wnd, key: int, scancode: int, action, mods: int):
 	if key == glfw.KEY_ESCAPE:
 		glfw.set_window_should_close(wnd, True)
 
+	global update_rotation
 	if key == glfw.KEY_TAB:
-		global update_rotation
 		if glfw.get_input_mode(wnd, glfw.CURSOR) == glfw.CURSOR_NORMAL:
 			update_rotation = update_rotation_moused
 			glfw.set_input_mode(wnd, glfw.CURSOR, glfw.CURSOR_DISABLED)
@@ -615,17 +615,23 @@ def handle_key(wnd, key: int, scancode: int, action, mods: int):
 			glfw.set_input_mode(wnd, glfw.CURSOR, glfw.CURSOR_NORMAL)
 		update_rotation()
 
+	global OIT
 	if key == glfw.KEY_O:
-		global OIT
 		OIT = not OIT
 
+	global FLY_CONTROLS
 	if key == glfw.KEY_R:
-		global FLY_CONTROLS
 		FLY_CONTROLS = not FLY_CONTROLS
 
+	global FLY_FORWARD
 	if key == glfw.KEY_F:
-		global FLY_FORWARD
 		FLY_FORWARD = not FLY_FORWARD
+
+	global bill_threshold
+	if key == glfw.KEY_EQUAL or key == glfw.KEY_KP_ADD:
+		bill_threshold += 5.0
+	if key == glfw.KEY_MINUS or key == glfw.KEY_KP_SUBTRACT:
+		bill_threshold = max(0.0, bill_threshold - 5.0)
 
 def handle_cursor(wnd, x: float, y: float):
 	if glfw.get_input_mode(wnd, glfw.CURSOR) == glfw.CURSOR_DISABLED:
