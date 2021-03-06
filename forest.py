@@ -608,9 +608,9 @@ def handle_cursor(wnd, x: float, y: float):
 	if glfw.get_input_mode(wnd, glfw.CURSOR) == glfw.CURSOR_DISABLED:
 		moused_rotate(vec2(x, y))
 
-#void APIENTRY debug(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, GLchar const *message, void const *userParam) {
-	#std::printf("%.*s\n", (int)length, message)
-#}
+@GLDEBUGPROC
+def debug(source, type, id, severity, length, message, param):
+	print(message[:length])
 
 def main():
 	global window
@@ -624,7 +624,7 @@ def main():
 	glfw.window_hint(glfw.SAMPLES, 8)
 	window = glfw.create_window(1024, 768, "Forest", None, None)
 	glfw.make_context_current(window)
-	#glDebugMessageCallback(debug, nullptr)
+	glDebugMessageCallback(debug, None)
 	init()
 	resize_window(window, 1024, 768)
 	glfw.set_window_size_callback(window, resize_window)
