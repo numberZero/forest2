@@ -561,6 +561,18 @@ def resize_window(wnd, width: int, height: int):
 	glLoadMatrixf(projection_matrix)
 	prepare_oit_textures(width, height)
 
+def handle_key(wnd, key: int, scancode: int, action, mods: int):
+	if action != glfw.PRESS:
+		return
+
+	if key == glfw.KEY_O:
+		global OIT
+		OIT = not OIT
+
+	if key == glfw.KEY_C:
+		global FLY_CONTROLS
+		FLY_CONTROLS = not FLY_CONTROLS
+
 #void APIENTRY debug(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, GLchar const *message, void const *userParam) {
 	#std::printf("%.*s\n", (int)length, message)
 #}
@@ -579,8 +591,9 @@ def main():
 	glfw.make_context_current(window)
 	#glDebugMessageCallback(debug, nullptr)
 	init()
-	#resize_window(1024, 768)
+	resize_window(window, 1024, 768)
 	glfw.set_window_size_callback(window, resize_window)
+	glfw.set_key_callback(window, handle_key)
 	t0 = glfw.get_time()
 	while not glfw.window_should_close(window):
 		glfw.poll_events()
