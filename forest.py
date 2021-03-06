@@ -153,10 +153,21 @@ def prepare_oit():
 
 def prepare_oit_textures(w, h):
 	try:
-		glDeleteTextures(2, [oit.colors, oit.transparencies])
-	except AttributeError:
+		glDeleteTextures([oit.colors, oit.transparencies, oit.depth])
+	except AttributeError as e:
 		pass
-	oit.colors, oit.transparencies = glGenTextures(2)
+	oit.colors, oit.transparencies, oit.depth = glGenTextures(3)
+
+	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
+	if glGetFramebufferAttachmentParameteriv(GL_DRAW_FRAMEBUFFER, GL_DEPTH,  GL_FRAMEBUFFER_ATTACHMENT_COMPONENT_TYPE) == GL_FLOAT:
+		depth_format = GL_DEPTH_COMPONENT32F
+	else:
+		depth_bits = glGetFramebufferAttachmentParameteriv(GL_DRAW_FRAMEBUFFER, GL_DEPTH, GL_FRAMEBUFFER_ATTACHMENT_DEPTH_SIZE)
+		depth_format = {
+				16: GL_DEPTH_COMPONENT16,
+				24: GL_DEPTH_COMPONENT24,
+				32: GL_DEPTH_COMPONENT32,
+			}[depth_bits]
 
 	glBindTexture(GL_TEXTURE_2D, oit.colors)
 	glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA16F, w, h)
@@ -172,11 +183,19 @@ def prepare_oit_textures(w, h):
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
 
+	glBindTexture(GL_TEXTURE_2D, oit.depth)
+	glTexStorage2D(GL_TEXTURE_2D, 1, depth_format, w, h)
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+
 	glBindTexture(GL_TEXTURE_2D, 0)
 
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, oit.framebuffer)
 	glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, oit.colors, 0)
 	glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, oit.transparencies, 0)
+	glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, oit.depth, 0)
 	glDrawBuffers([GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1])
 	glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
 
@@ -414,11 +433,13 @@ def render():
 	glEnd()
 
 	if OIT:
-		glDisable(GL_FRAMEBUFFER_SRGB)
+		w, h = window_width, window_height
+		glBindFramebuffer(GL_READ_FRAMEBUFFER, 0)
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, oit.framebuffer)
+		glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_DEPTH_BUFFER_BIT, GL_NEAREST)
 		glClearBufferfv(GL_COLOR, 0, (0.0, 0.0, 0.0, 0.0))
 		glClearBufferfv(GL_COLOR, 1, (1.0, 0.0, 0.0, 0.0))
-		glDisable(GL_DEPTH_TEST)
+		glDepthMask(False)
 		glBlendFunci(0, GL_ONE, GL_ONE)
 		glBlendFunci(1, GL_ZERO, GL_SRC_COLOR)
 		glUseProgram(programs.bill_oit)
@@ -445,13 +466,14 @@ def render():
 	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
 
 	if OIT:
-		glEnable(GL_FRAMEBUFFER_SRGB)
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
 		glUseProgram(oit.merge)
 		glBindTextureUnit(0, oit.colors)
 		glBindTextureUnit(1, oit.transparencies)
+		glDisable(GL_DEPTH_TEST)
 		glDrawArrays(GL_POINTS, 0, 1)
 		glEnable(GL_DEPTH_TEST)
+		glDepthMask(True)
 
 	glUseProgram(0)
 
@@ -552,7 +574,8 @@ class BillRenderer:
 		return layers
 
 def resize_window(wnd, width: int, height: int):
-	global projection_matrix
+	global projection_matrix, window_width, window_height
+	window_width, window_height = width, height
 	m = min(width, height)
 	glViewport(0, 0, width, height)
 	projection_matrix = make_rescale_matrix(width / m, height / m) * make_projection_matrix(2.0, 0.1)
