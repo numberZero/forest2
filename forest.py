@@ -744,8 +744,11 @@ def main():
 	glfw.set_window_size_callback(window, resize_window)
 	glfw.set_key_callback(window, handle_key)
 	glfw.set_cursor_pos_callback(window, handle_cursor)
-	if glfw.raw_mouse_motion_supported():
-		glfw.set_input_mode(window, glfw.RAW_MOUSE_MOTION, True)
+	try:
+		if glfw.raw_mouse_motion_supported():
+			glfw.set_input_mode(window, glfw.RAW_MOUSE_MOTION, True)
+	except AttributeError:
+		pass # ну, значит, не поддерживается
 	t0 = glfw.get_time()
 	while not glfw.window_should_close(window):
 		glfw.poll_events()
