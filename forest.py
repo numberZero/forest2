@@ -15,9 +15,14 @@ from glm import vec2, vec3, vec4, mat2, mat3, mat4
 import fps_meter
 import glm_pyogl
 
-TRULY_ISOMETRIC = False
 FLY_CONTROLS = False
-OIT = False
+FLY_FORWARD = True
+OIT = True
+MOUSE_SPEED = 0.2
+
+rotation_ypr = vec3(30.0, -15.0, 0.0)
+position = vec3(0.0, 0.0, 5.0) # sqrt(2)⋅tan(30°) = sqrt(2/3)
+
 h_circle_steps = 32
 v_halfcircle_steps = 32
 levels = 8
@@ -232,45 +237,39 @@ def init():
 	glEnable(GL_MULTISAMPLE)
 	glDepthFunc(GL_LEQUAL)
 
-if TRULY_ISOMETRIC:
-	rotation_ypr = vec3(135.0, -35.26, 0.0)
-	position = vec3(1.0, 1.0, 1.0)
-else:
-	rotation_ypr = vec3(135.0, -30.0, 0.0)
-	position = vec3(1.0, 1.0, 0.816) # sqrt(2)⋅tan(30°) = sqrt(2/3)
-
 fpsmeter = fps_meter.FPSMeter(fps_meter.TimeMeter2)
 
 def update(dt: float):
 	global position, rotation_ypr
-	vel = 3.0
 	rvel = 90.0
 	if FLY_CONTROLS:
+		vel = 10.0
 		if glfw.get_key(window, glfw.KEY_LEFT): position -= dt * vel * move_matrix[0]
 		if glfw.get_key(window, glfw.KEY_RIGHT): position += dt * vel * move_matrix[0]
 		if glfw.get_key(window, glfw.KEY_UP): position += dt * vel * move_matrix[1]
 		if glfw.get_key(window, glfw.KEY_DOWN): position -= dt * vel * move_matrix[1]
+		if glfw.get_key(window, glfw.KEY_SPACE): position += dt * vel * move_matrix[2]
+		if glfw.get_key(window, glfw.KEY_LEFT_SHIFT): position -= dt * vel * move_matrix[2]
 		if glfw.get_key(window, glfw.KEY_A): rotation_ypr.x += dt * rvel
 		if glfw.get_key(window, glfw.KEY_D): rotation_ypr.x -= dt * rvel
 		if glfw.get_key(window, glfw.KEY_W): rotation_ypr.y += dt * rvel
 		if glfw.get_key(window, glfw.KEY_S): rotation_ypr.y -= dt * rvel
 		if glfw.get_key(window, glfw.KEY_E): rotation_ypr.z += dt * rvel
 		if glfw.get_key(window, glfw.KEY_Q): rotation_ypr.z -= dt * rvel
+		if FLY_FORWARD: position += dt * vel * move_matrix[1]
 	else:
+		vel = 5.0
 		if glfw.get_key(window, glfw.KEY_D): position += dt * vel * move_matrix[0]
 		if glfw.get_key(window, glfw.KEY_A): position -= dt * vel * move_matrix[0]
 		if glfw.get_key(window, glfw.KEY_W): position += dt * vel * move_matrix[1]
 		if glfw.get_key(window, glfw.KEY_S): position -= dt * vel * move_matrix[1]
-		if glfw.get_key(window, glfw.KEY_R): position += dt * vel * move_matrix[2]
-		if glfw.get_key(window, glfw.KEY_F): position -= dt * vel * move_matrix[2]
 		if glfw.get_key(window, glfw.KEY_SPACE): position += dt * vel * move_matrix[2]
 		if glfw.get_key(window, glfw.KEY_LEFT_SHIFT): position -= dt * vel * move_matrix[2]
 		if glfw.get_key(window, glfw.KEY_LEFT): rotation_ypr.x += dt * rvel
 		if glfw.get_key(window, glfw.KEY_RIGHT): rotation_ypr.x -= dt * rvel
 		if glfw.get_key(window, glfw.KEY_UP): rotation_ypr.y += dt * rvel
 		if glfw.get_key(window, glfw.KEY_DOWN): rotation_ypr.y -= dt * rvel
-	rotation_ypr.y = glm.clamp(rotation_ypr.y, -80.0, 80.0)
-	rotation_ypr.z = glm.clamp(rotation_ypr.z, -60.0, 60.0)
+	update_rotation()
 
 	fpsmeter.next_frame(dt)
 	glfw.set_window_title(window, f'{fpsmeter.fps:.1f} FPS in Forest1')
@@ -561,17 +560,53 @@ def resize_window(wnd, width: int, height: int):
 	glLoadMatrixf(projection_matrix)
 	prepare_oit_textures(width, height)
 
+def update_rotation_base():
+	rotation_ypr.y = glm.clamp(rotation_ypr.y, -80.0, 80.0)
+	rotation_ypr.z = glm.clamp(rotation_ypr.z, -60.0, 60.0)
+
+def update_rotation_moused():
+	update_rotation_base()
+	glfw.set_cursor_pos(window, rotation_ypr.x / -MOUSE_SPEED, rotation_ypr.y / -MOUSE_SPEED)
+
+def moused_rotate(mpos: vec2):
+	rotation_ypr.x = -MOUSE_SPEED * mpos.x
+	rotation_ypr.y = -MOUSE_SPEED * mpos.y
+	update_rotation_moused()
+
+update_rotation = update_rotation_base
+
 def handle_key(wnd, key: int, scancode: int, action, mods: int):
 	if action != glfw.PRESS:
 		return
+
+	if key == glfw.KEY_ESCAPE:
+		glfw.set_window_should_close(wnd, True)
+
+	if key == glfw.KEY_TAB:
+		global update_rotation
+		if glfw.get_input_mode(wnd, glfw.CURSOR) == glfw.CURSOR_NORMAL:
+			update_rotation = update_rotation_moused
+			glfw.set_input_mode(wnd, glfw.CURSOR, glfw.CURSOR_DISABLED)
+		else:
+			update_rotation = update_rotation_base
+			glfw.set_input_mode(wnd, glfw.CURSOR, glfw.CURSOR_NORMAL)
+		update_rotation()
 
 	if key == glfw.KEY_O:
 		global OIT
 		OIT = not OIT
 
-	if key == glfw.KEY_C:
+	if key == glfw.KEY_R:
 		global FLY_CONTROLS
 		FLY_CONTROLS = not FLY_CONTROLS
+
+	if key == glfw.KEY_F:
+		global FLY_FORWARD
+		FLY_FORWARD = not FLY_FORWARD
+
+def handle_cursor(wnd, x: float, y: float):
+	if glfw.get_input_mode(wnd, glfw.CURSOR) == glfw.CURSOR_DISABLED:
+		moused_rotate(vec2(x, y))
 
 #void APIENTRY debug(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, GLchar const *message, void const *userParam) {
 	#std::printf("%.*s\n", (int)length, message)
@@ -594,6 +629,9 @@ def main():
 	resize_window(window, 1024, 768)
 	glfw.set_window_size_callback(window, resize_window)
 	glfw.set_key_callback(window, handle_key)
+	glfw.set_cursor_pos_callback(window, handle_cursor)
+	if glfw.raw_mouse_motion_supported():
+		glfw.set_input_mode(window, glfw.RAW_MOUSE_MOTION, True)
 	t0 = glfw.get_time()
 	while not glfw.window_should_close(window):
 		glfw.poll_events()
