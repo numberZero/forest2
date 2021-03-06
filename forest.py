@@ -3,13 +3,13 @@
 import os, os.path
 import math
 import ctypes
-import cairo
-import glm
-import glfw
+import cairo # pip:pycairo
+import glm # pip:PyGLM
+import glfw # pip:glfw
 import random
-import numpy as np
+import numpy as np # pip:numpy
 import numpy.random as rnd
-from OpenGL.GL import *
+from OpenGL.GL import * # pip:PyOpenGL
 from OpenGL.error import Error
 from glm import vec2, vec3, vec4, mat2, mat3, mat4
 
