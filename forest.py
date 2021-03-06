@@ -439,27 +439,30 @@ def prepare_split():
 	glBufferStorage(GL_SHADER_STORAGE_BUFFER, len(indirects) * 4, None, GL_DYNAMIC_STORAGE_BIT)
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0)
 
+stat = np.ndarray((0, 2))
+
 def render():
+	global stat
 	time = glfw.get_time()
+
+	models, textures = np.sum(stat, axis=0)
 	lines = []
-	lines.append(f'FPS: {fpsmeter.fps:.1f}')
-	lines.append(f'Время с запуска: {time:.0f} с')
+	lines.append(((0.8, 0.8, 0.8), f'FPS: {fpsmeter.fps:.1f}, время с запуска: {time:.0f} с'))
+	lines.append(((1.0, 1.0, 1.0), f'Отрисовка текстурами с дальности {bill_threshold:.0f} (изменить: +/-). Отрисовано моделями: {models}, текстурами: {textures}, всего: {models + textures}'))
 	ctl_mode = 'полёт' if FLY_CONTROLS else 'обычный'
-	lines.append(((0.0, 1.0, 1.0) if FLY_CONTROLS else (1.0, 1.0, 1.0), f'Режим управления «{ctl_mode}» (переключение: R)'))
-	txt = 'включён' if FLY_FORWARD else 'выключен'
-	lines.append(((1.0, 0.7, 0.0) if FLY_FORWARD else (0.8, 0.8, 0.8), f'Автополёт {txt} (переключение: F)'))
 	if glfw.get_input_mode(window, glfw.CURSOR) == glfw.CURSOR_DISABLED:
-		lines.append(f'Управление: {"стрелочки" if FLY_CONTROLS else "WASD"}, space/shift, мышь')
+		lines.append(((0.0, 1.0, 1.0) if FLY_CONTROLS else (1.0, 1.0, 1.0), f'Режим управления «{ctl_mode}» (мышь, {"стрелочки" if FLY_CONTROLS else "WASD"}, space/shift; переключение: R)'))
 		lines.append(((1.0, 0.7, 0.0), 'Мышь захвачена (освобождение по Tab)'))
 	else:
-		lines.append('Управление: WASD, space/shift, стрелочки')
+		lines.append(((0.0, 1.0, 1.0) if FLY_CONTROLS else (1.0, 1.0, 1.0), f'Режим управления «{ctl_mode}» (WASD, space/shift, стрелочки; переключение: R)'))
 		lines.append(((0.0, 1.0, 0.0), 'Включение мышиного управления: Tab'))
+	lines.append(((1.0, 0.7, 0.0) if FLY_FORWARD else (0.8, 0.8, 0.8), f'Автополёт {"включён" if FLY_FORWARD else "выключен"} (переключение: F)'))
+	lines.append(((0.0, 1.0, 0.0) if OIT else (0.8, 0.8, 0.8), f'Прозрачность: {"OIT" if OIT else "blend"} (переключение: O)'))
 	overlay.draw(lines)
 
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 	glMatrixMode(GL_MODELVIEW)
 	glLoadMatrixf(camera_matrix)
-	render_tripod()
 
 	glUseProgram(programs.split)
 	glUniform3fv(0, 1, position)
@@ -473,7 +476,7 @@ def render():
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, indbuf)
 	glDispatchCompute(ocount, 1, 1)
 	glMemoryBarrier(GL_VERTEX_ATTRIB_ARRAY_BARRIER_BIT | GL_COMMAND_BARRIER_BIT)
-	#print(np.frombuffer(glGetBufferSubData(GL_DRAW_INDIRECT_BUFFER, 0, 36 * 3), dtype='uint32').reshape((-1, 9)))
+	stat = np.frombuffer(glGetBufferSubData(GL_DRAW_INDIRECT_BUFFER, 0, 36 * 3), dtype='uint32').reshape((-1, 9))[:, (1, 5)]
 
 	glUseProgram(programs.mesh)
 	glUniformMatrix4fv(0, 1, GL_FALSE, projection_matrix * camera_matrix)
