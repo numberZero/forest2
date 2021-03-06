@@ -568,7 +568,6 @@ def render():
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0)
 	glDisableVertexAttribArray(0)
 	glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0)
-	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
 
 	glDisable(GL_DEPTH_TEST)
 	if OIT:
@@ -576,9 +575,12 @@ def render():
 		glUseProgram(oit.merge)
 		glBindTextureUnit(0, oit.colors)
 		glBindTextureUnit(1, oit.transparencies)
+		glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
 		glDrawArrays(GL_POINTS, 0, 1)
 
+	glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
 	overlay.show()
+	glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ONE_MINUS_SRC_ALPHA)
 
 	glUseProgram(0)
 	glEnable(GL_DEPTH_TEST)

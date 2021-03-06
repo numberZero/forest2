@@ -10,9 +10,8 @@ layout(location = 1) out float o_transparency;
 
 void main() {
 	vec4 c = texture(tex, vec3(uv, layer)) * color;
-	if (c.a <= 0.125)
-		discard;
-	float w = exp((gl_FragCoord.w - 1.0) * 2.0);
+	float dist = gl_FragCoord.z / gl_FragCoord.w;
+	float w = exp(10.0 - 0.1 * dist);
 	o_color = c * w;
 	o_transparency = 1.0 - c.a;
 }
