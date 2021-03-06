@@ -16,7 +16,7 @@ import fps_meter
 import glm_pyogl
 
 FLY_CONTROLS = False
-FLY_FORWARD = True
+FLY_FORWARD = False
 OIT = True
 MOUSE_SPEED = 0.2
 
@@ -154,7 +154,7 @@ def prepare_oit():
 def prepare_oit_textures(w, h):
 	try:
 		glDeleteTextures([oit.colors, oit.transparencies, oit.depth])
-	except AttributeError as e:
+	except AttributeError:
 		pass
 	oit.colors, oit.transparencies, oit.depth = glGenTextures(3)
 
@@ -275,7 +275,6 @@ def update(dt: float):
 		if glfw.get_key(window, glfw.KEY_S): rotation_ypr.y -= dt * rvel
 		if glfw.get_key(window, glfw.KEY_E): rotation_ypr.z += dt * rvel
 		if glfw.get_key(window, glfw.KEY_Q): rotation_ypr.z -= dt * rvel
-		if FLY_FORWARD: position += dt * vel * move_matrix[1]
 	else:
 		vel = 5.0
 		if glfw.get_key(window, glfw.KEY_D): position += dt * vel * move_matrix[0]
@@ -288,6 +287,7 @@ def update(dt: float):
 		if glfw.get_key(window, glfw.KEY_RIGHT): rotation_ypr.x -= dt * rvel
 		if glfw.get_key(window, glfw.KEY_UP): rotation_ypr.y += dt * rvel
 		if glfw.get_key(window, glfw.KEY_DOWN): rotation_ypr.y -= dt * rvel
+	if FLY_FORWARD: position += dt * 10.0 * move_matrix[1]
 	update_rotation()
 
 	fpsmeter.next_frame(dt)
