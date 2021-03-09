@@ -83,18 +83,48 @@ void main() {
 	mat3 w;
 
 	const float v_threshold = 0.5;
-	if (v_angle < v_threshold) {
+	if (v_view_angle < v_threshold) {
 		mat4x3 model_matrix = mat4x3(size.x);
 		model_matrix[2].z = size.y;
 		model_matrix[3].xyz = position;
 
 		const float r = 0.5;
 		const float h = 0.5;
+
+		/* Полная сфера
 		const float S = 4.0 * PI * r * r;
-		mat4 I = mat4(r*r * S);
-		I[2].z = (r*r/3.0 + h*h) * S;
+		mat4 I = mat4(r*r/3.0 * S);
+		I[2].z += h*h * S;
 		I[3].z = I[2].w = h * S;
 		I[3].w = S;
+		*/
+
+		/* Полусфера
+		*/
+		const float S = 2.0 * PI * r * r;
+		mat4 I = mat4(r*r/3.0);
+		I[2].z += r*h + h*h;
+		I[3].z = I[2].w = r/2.0 + h;
+		I[3].w = 1.0;
+		I *= S;
+
+		/* Выбор текстуры
+		Оптимальный до перспективных искажений — одинаковый для всех точек экрана...
+		float E0 = 1.0e5;
+		for (int k = 0; k < orig_proj_matrices.length(); k++) {
+			mat4 opm = orig_proj_matrices[k];
+			mat4x3 R = mat4x3(opm[0].xzw, opm[1].xzw, opm[2].xzw, opm[3].xzw);
+			mat3x4 m = I * transpose(R) * inverse(R * I * transpose(R));
+			mat4 D = view_matrix * mat4(model_matrix) * (mat4(m * R) - mat4(1.0));
+			mat4 EE = D * I * transpose(D);
+			float E = EE[0].x + EE[2].z;
+			if (E < E0) {
+				E0 = E;
+				view = k;
+			}
+		}
+		orig_proj_matrix = orig_proj_matrices[view];
+		*/
 
 		mat4x3 R = mat4x3(orig_proj_matrix[0].xzw, orig_proj_matrix[1].xzw, orig_proj_matrix[2].xzw, orig_proj_matrix[3].xzw);
 		mat3x4 m = I * transpose(R) * inverse(R * I * transpose(R));
