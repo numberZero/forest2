@@ -486,10 +486,16 @@ def render():
 	glMatrixMode(GL_MODELVIEW)
 	glLoadMatrixf(camera_matrix)
 
+	r = h = 0.5 * tree_scale
+	m = glm.transpose(projection_matrix * camera_matrix)
+	cull_matrix = mat4(m[3] - m[0], m[3] + m[0], m[3] - m[1], m[3] + m[1]) # точно по пирамиде видимости
+	for k in range(4):
+		cull_matrix[k].w += r * glm.length(cull_matrix[k].xyz) # расширение на r
+	cull_matrix = glm.translate(glm.transpose(cull_matrix), vec3(0.0, 0.0, h)) # сдвиг на h («центр» дерева находится на высоте h)
 	glUseProgram(programs.split)
 	glUniform3fv(0, 1, position)
 	glUniform2f(1, bill_threshold, 1.0)
-	glUniform3fv(2, 1, glm.transpose(camera_matrix)[1].xyz)
+	glUniformMatrix4fv(2, 1, False, cull_matrix)
 	glBindBuffer(GL_DRAW_INDIRECT_BUFFER, indbuf)
 	glBufferSubData(GL_DRAW_INDIRECT_BUFFER, 0, indirects)
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, obuf)

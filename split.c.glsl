@@ -24,7 +24,7 @@ layout(local_size_x = 1) in;
 
 layout(location = 0) uniform vec3 camera_position;
 layout(location = 1) uniform vec2 thresholds = vec2(15.0, 1.0);
-layout(location = 2) uniform vec3 camera_direction;
+layout(location = 2) uniform mat4 cull_matrix = mat4(0.0);
 
 layout(binding = 0) readonly restrict buffer SourcePositions {
 	vec4 position[];
@@ -46,11 +46,9 @@ void main() {
 	vec4 pk = position[gl_GlobalInvocationID.x];
 	vec4 pos = vec4(pk.xyz, 1.0);
 	uint kind = uint(pk.w);
-	vec3 direction = pos.xyz - camera_position;
-	float dist = length(direction);
-	if (dist > thresholds.y && dot(direction, camera_direction) < 0.0)
+	if (any(lessThan(cull_matrix * pos, vec4(0.0))))
 		return;
-	if (dist < thresholds.x) {
+	if (distance(camera_position, pos.xyz) < thresholds.x) {
 		uint index = atomicAdd(inds[kind].near.instanceCount, 1);
 		npos[inds[kind].near.baseInstance + index] = pos;
 	} else {
