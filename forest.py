@@ -36,11 +36,10 @@ import glm_pyogl
 
 FLY_CONTROLS = False
 FLY_FORWARD = False
-OIT = True
-OIT_TWOPASS = False
+TRANSPARENCY_MODES = ['blend', 'onepass', 'twopass_depth', 'twopass_color']
+TRANSPARENCY = TRANSPARENCY_MODES[-1]
+transparency_threshold = 0.5
 MOUSE_SPEED = 0.2
-oit_firstpass_threshold = 0.75
-blend_threshold = 0.125
 
 rotation_ypr = vec3(30.0, -15.0, 0.0)
 position = vec3(0.0, 0.0, 10.0) # sqrt(2)⋅tan(30°) = sqrt(2/3)
@@ -480,13 +479,7 @@ def render():
 		lines.append(((0.0, 1.0, 1.0) if FLY_CONTROLS else (1.0, 1.0, 1.0), f'Режим управления «{ctl_mode}» (WASD, space/shift, стрелочки; переключение: R)'))
 		lines.append(((0.0, 1.0, 0.0), 'Включение мышиного управления: Tab'))
 	lines.append(((1.0, 0.7, 0.0) if FLY_FORWARD else (0.8, 0.8, 0.8), f'Автополёт {"включён" if FLY_FORWARD else "выключен"} (переключение: F)'))
-	if OIT:
-		if OIT_TWOPASS:
-			lines.append(((0.0, 1.0, 0.0), f'Прозрачность: двухшаговый OIT (переключение: O); порог: {oit_firstpass_threshold} (изменение: //*)'))
-		else:
-			lines.append(((0.0, 1.0, 0.0), f'Прозрачность: одношаговый OIT (переключение: O); порог: {blend_threshold} (изменение: //*)'))
-	else:
-		lines.append(((0.8, 0.8, 0.8), f'Прозрачность: blend (переключение: O); порог: {blend_threshold} (изменение: //*)'))
+	lines.append(f'Прозрачность: {TRANSPARENCY} (переключение: O); порог: {transparency_threshold} (изменение: //*)')
 	overlay.draw(lines)
 
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
@@ -555,18 +548,26 @@ def render():
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, hstb)
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, cmb)
 
-	def render_bills(program, threshold):
+	def render_bills(program, threshold=transparency_threshold, premultiplied_alpha=None):
 		glUseProgram(program)
 		glUniformMatrix4fv(0, 1, GL_FALSE, projection_matrix)
 		glUniformMatrix3fv(1, 1, GL_FALSE, mat3(camera_matrix))
 		glUniform3fv(2, 1, position)
 		glUniform1i(3, v_halfcircle_steps)
 		glUniform1f(4, threshold)
+		if premultiplied_alpha != None:
+			glUniform1i(5, 1 if premultiplied_alpha else 0)
 		for k in range(len(ocounts)):
 			glBindTextureUnit(0, meshes[k].bill)
 			glDrawArraysIndirect(GL_POINTS, ctypes.c_void_p(36 * k + 20))
 
-	if OIT:
+	if TRANSPARENCY == 'blend':
+		render_bills(programs.bill, premultiplied_alpha=True)
+	elif TRANSPARENCY in ['onepass', 'twopass_depth', 'twopass_color']:
+		if TRANSPARENCY == 'twopass_color':
+			glDisable(GL_BLEND)
+			render_bills(programs.bill, premultiplied_alpha=False)
+			glEnable(GL_BLEND)
 		w, h = window_width, window_height
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, 0)
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, oit.framebuffer)
@@ -575,24 +576,25 @@ def render():
 		glClearBufferfv(GL_COLOR, 1, (1.0, 0.0, 0.0, 0.0))
 		glBlendFunci(0, GL_ONE, GL_ONE)
 		glBlendFunci(1, GL_ZERO, GL_SRC_COLOR)
-		if OIT_TWOPASS:
+		if TRANSPARENCY == 'twopass_depth':
 			glColorMask(False, False, False, False)
-			render_bills(programs.bill, oit_firstpass_threshold)
+			render_bills(programs.bill)
 			glColorMask(True, True, True, True)
-			glDepthMask(False)
+		glDepthMask(False)
+		if TRANSPARENCY == 'twopass_color':
+			glDepthFunc(GL_LESS)
 			render_bills(programs.bill_oit, 0.0)
 		else:
-			glDepthMask(False)
-			render_bills(programs.bill_oit, blend_threshold)
+			render_bills(programs.bill_oit)
 	else:
-		render_bills(programs.bill, blend_threshold)
+		assert(False)
 
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0)
 	glDisableVertexAttribArray(0)
 	glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0)
 
 	glDisable(GL_DEPTH_TEST)
-	if OIT:
+	if TRANSPARENCY in ['onepass', 'twopass_depth', 'twopass_color']:
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
 		glUseProgram(oit.merge)
 		glBindTextureUnit(0, oit.colors)
@@ -606,6 +608,7 @@ def render():
 
 	glUseProgram(0)
 	glEnable(GL_DEPTH_TEST)
+	glDepthFunc(GL_LEQUAL)
 	glDepthMask(True)
 
 class BillRenderer:
@@ -747,25 +750,17 @@ def handle_key(wnd, key: int, scancode: int, action, mods: int):
 			glfw.set_input_mode(wnd, glfw.CURSOR, glfw.CURSOR_NORMAL)
 		update_rotation()
 
-	global OIT, OIT_TWOPASS
+	global TRANSPARENCY
 	if key == glfw.KEY_O:
-		if OIT:
-			if OIT_TWOPASS:
-				OIT = False
-				OIT_TWOPASS = False
-			else:
-				OIT_TWOPASS = True
-		else:
-			OIT = True
-			OIT_TWOPASS = False
+		i = TRANSPARENCY_MODES.index(TRANSPARENCY)
+		i = (i + 1) % len(TRANSPARENCY_MODES)
+		TRANSPARENCY = TRANSPARENCY_MODES[i]
 
-	global blend_threshold, oit_firstpass_threshold
-	if key == glfw.KEY_KP_DIVIDE or key == glfw.KEY_KP_MULTIPLY or key == glfw.KEY_9 or key == glfw.KEY_0:
-		inc = 0.125 if key == glfw.KEY_KP_MULTIPLY or key == glfw.KEY_0 else -0.125
-		if OIT and OIT_TWOPASS:
-			oit_firstpass_threshold = glm.clamp(oit_firstpass_threshold + inc, 0.0, 1.0)
-		else:
-			blend_threshold = glm.clamp(blend_threshold + inc, 0.0, 1.0)
+	global transparency_threshold
+	if key == glfw.KEY_KP_DIVIDE or key == glfw.KEY_9:
+		transparency_threshold = glm.clamp(transparency_threshold - 0.125, 0.0, 1.0)
+	if key == glfw.KEY_KP_MULTIPLY or key == glfw.KEY_0:
+		transparency_threshold = glm.clamp(transparency_threshold + 0.125, 0.0, 1.0)
 
 	global FLY_CONTROLS
 	if key == glfw.KEY_R:
