@@ -20,6 +20,7 @@ for modname, pipname in [
 		_import()
 del _import
 
+import cairo, glm, glfw
 import os, os.path
 import math
 import ctypes
@@ -36,7 +37,10 @@ import glm_pyogl
 FLY_CONTROLS = False
 FLY_FORWARD = False
 OIT = True
+OIT_TWOPASS = False
 MOUSE_SPEED = 0.2
+oit_firstpass_threshold = 0.75
+blend_threshold = 0.125
 
 rotation_ypr = vec3(30.0, -15.0, 0.0)
 position = vec3(0.0, 0.0, 10.0) # sqrt(2)⋅tan(30°) = sqrt(2/3)
@@ -467,7 +471,7 @@ def render():
 	lines = []
 	lines.append(((0.8, 0.8, 0.8), f'FPS: {fpsmeter.fps:.1f}, время с запуска: {time:.0f} с'))
 	lines.append(((0.8, 0.8, 0.8), f'Размер дерева: {tree_scale:.1f} (изменение: колёсико мыши)'))
-	lines.append(((1.0, 1.0, 1.0), f'Отрисовка текстурами с дальности {bill_threshold:.0f} (изменить: +/-). Отрисовано моделями: {models}, текстурами: {textures}, всего: {models + textures}'))
+	lines.append(((1.0, 1.0, 1.0), f'Отрисовка текстурами с дальности {bill_threshold:.0f} (изменение: +/-). Отрисовано моделями: {models}, текстурами: {textures}, всего: {models + textures}'))
 	ctl_mode = 'полёт' if FLY_CONTROLS else 'обычный'
 	if glfw.get_input_mode(window, glfw.CURSOR) == glfw.CURSOR_DISABLED:
 		lines.append(((0.0, 1.0, 1.0) if FLY_CONTROLS else (1.0, 1.0, 1.0), f'Режим управления «{ctl_mode}» (мышь, {"стрелочки" if FLY_CONTROLS else "WASD"}, space/shift; переключение: R)'))
@@ -476,7 +480,13 @@ def render():
 		lines.append(((0.0, 1.0, 1.0) if FLY_CONTROLS else (1.0, 1.0, 1.0), f'Режим управления «{ctl_mode}» (WASD, space/shift, стрелочки; переключение: R)'))
 		lines.append(((0.0, 1.0, 0.0), 'Включение мышиного управления: Tab'))
 	lines.append(((1.0, 0.7, 0.0) if FLY_FORWARD else (0.8, 0.8, 0.8), f'Автополёт {"включён" if FLY_FORWARD else "выключен"} (переключение: F)'))
-	lines.append(((0.0, 1.0, 0.0) if OIT else (0.8, 0.8, 0.8), f'Прозрачность: {"OIT" if OIT else "blend"} (переключение: O)'))
+	if OIT:
+		if OIT_TWOPASS:
+			lines.append(((0.0, 1.0, 0.0), f'Прозрачность: двухшаговый OIT (переключение: O); порог: {oit_firstpass_threshold} (изменение: //*)'))
+		else:
+			lines.append(((0.0, 1.0, 0.0), f'Прозрачность: одношаговый OIT (переключение: O); порог: {blend_threshold} (изменение: //*)'))
+	else:
+		lines.append(((0.8, 0.8, 0.8), f'Прозрачность: blend (переключение: O); порог: {blend_threshold} (изменение: //*)'))
 	overlay.draw(lines)
 
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
@@ -537,6 +547,25 @@ def render():
 	glVertex2f( rad, -rad)
 	glEnd()
 
+	glVertexAttrib2f(1, tree_scale, tree_scale)
+	glEnableVertexAttribArray(0)
+	glBindBuffer(GL_ARRAY_BUFFER, fbuf)
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(0))
+	glBindBuffer(GL_ARRAY_BUFFER, 0)
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, hstb)
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, cmb)
+
+	def render_bills(program, threshold):
+		glUseProgram(program)
+		glUniformMatrix4fv(0, 1, GL_FALSE, projection_matrix)
+		glUniformMatrix3fv(1, 1, GL_FALSE, mat3(camera_matrix))
+		glUniform3fv(2, 1, position)
+		glUniform1i(3, v_halfcircle_steps)
+		glUniform1f(4, threshold)
+		for k in range(len(ocounts)):
+			glBindTextureUnit(0, meshes[k].bill)
+			glDrawArraysIndirect(GL_POINTS, ctypes.c_void_p(36 * k + 20))
+
 	if OIT:
 		w, h = window_width, window_height
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, 0)
@@ -544,27 +573,20 @@ def render():
 		glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_DEPTH_BUFFER_BIT, GL_NEAREST)
 		glClearBufferfv(GL_COLOR, 0, (0.0, 0.0, 0.0, 0.0))
 		glClearBufferfv(GL_COLOR, 1, (1.0, 0.0, 0.0, 0.0))
-		glDepthMask(False)
 		glBlendFunci(0, GL_ONE, GL_ONE)
 		glBlendFunci(1, GL_ZERO, GL_SRC_COLOR)
-		glUseProgram(programs.bill_oit)
+		if OIT_TWOPASS:
+			glColorMask(False, False, False, False)
+			render_bills(programs.bill, oit_firstpass_threshold)
+			glColorMask(True, True, True, True)
+			glDepthMask(False)
+			render_bills(programs.bill_oit, 0.0)
+		else:
+			glDepthMask(False)
+			render_bills(programs.bill_oit, blend_threshold)
 	else:
-		glUseProgram(programs.bill)
+		render_bills(programs.bill, blend_threshold)
 
-	glUniformMatrix4fv(0, 1, GL_FALSE, projection_matrix)
-	glUniformMatrix3fv(1, 1, GL_FALSE, mat3(camera_matrix))
-	glUniform3fv(2, 1, position)
-	glVertexAttrib2f(1, tree_scale, tree_scale)
-	glUniform1i(3, v_halfcircle_steps)
-	glEnableVertexAttribArray(0)
-	glBindBuffer(GL_ARRAY_BUFFER, fbuf)
-	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 16, ctypes.c_void_p(0))
-	glBindBuffer(GL_ARRAY_BUFFER, 0)
-	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, hstb)
-	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, cmb)
-	for k in range(len(ocounts)):
-		glBindTextureUnit(0, meshes[k].bill)
-		glDrawArraysIndirect(GL_POINTS, ctypes.c_void_p(36 * k + 20))
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0)
 	glDisableVertexAttribArray(0)
 	glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0)
@@ -725,9 +747,25 @@ def handle_key(wnd, key: int, scancode: int, action, mods: int):
 			glfw.set_input_mode(wnd, glfw.CURSOR, glfw.CURSOR_NORMAL)
 		update_rotation()
 
-	global OIT
+	global OIT, OIT_TWOPASS
 	if key == glfw.KEY_O:
-		OIT = not OIT
+		if OIT:
+			if OIT_TWOPASS:
+				OIT = False
+				OIT_TWOPASS = False
+			else:
+				OIT_TWOPASS = True
+		else:
+			OIT = True
+			OIT_TWOPASS = False
+
+	global blend_threshold, oit_firstpass_threshold
+	if key == glfw.KEY_KP_DIVIDE or key == glfw.KEY_KP_MULTIPLY or key == glfw.KEY_9 or key == glfw.KEY_0:
+		inc = 0.125 if key == glfw.KEY_KP_MULTIPLY or key == glfw.KEY_0 else -0.125
+		if OIT and OIT_TWOPASS:
+			oit_firstpass_threshold = glm.clamp(oit_firstpass_threshold + inc, 0.0, 1.0)
+		else:
+			blend_threshold = glm.clamp(blend_threshold + inc, 0.0, 1.0)
 
 	global FLY_CONTROLS
 	if key == glfw.KEY_R:

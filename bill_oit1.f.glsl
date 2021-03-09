@@ -1,5 +1,6 @@
 #version 460
 
+layout(location = 4) uniform float threshold = 0.125;
 layout(binding = 0) uniform sampler2DArray tex;
 
 in vec2 uv;
@@ -10,6 +11,8 @@ layout(location = 1) out float o_transparency;
 
 void main() {
 	vec4 c = texture(tex, vec3(uv, layer)) * color;
+	if (c.a <= threshold)
+		discard;
 	float dist = gl_FragCoord.z / gl_FragCoord.w;
 	float w = exp(10.0 - 0.1 * dist);
 	o_color = c * w;
