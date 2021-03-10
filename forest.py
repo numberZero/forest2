@@ -235,7 +235,6 @@ class Overlay:
 			glDeleteTextures([self.texture])
 		except AttributeError:
 			pass
-		self.surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, w, h)
 		self.texture = glGenTextures(1)
 		self.size = (w, h)
 		glBindTexture(GL_TEXTURE_2D, self.texture)
@@ -248,13 +247,15 @@ class Overlay:
 		glBindTexture(GL_TEXTURE_2D, 0)
 
 	def draw(self, lines = []):
-		ctx = cairo.Context(self.surface)
+		w, h = self.size
+		surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, w, h)
+		ctx = cairo.Context(surface)
 		ctx.set_operator(cairo.OPERATOR_CLEAR)
 		ctx.paint()
 		ctx.set_operator(cairo.OPERATOR_OVER)
 		ctx.set_source_rgba(1.0, 1.0, 1.0, 1.0)
 		ctx.scale(1.0, -1.0)
-		ctx.translate(0.0, -self.size[1])
+		ctx.translate(0.0, -h)
 		ctx.select_font_face('Nimbus Sans', cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
 		font_size = 16.0
 		line_height = 1.25 * font_size
@@ -276,8 +277,10 @@ class Overlay:
 			ctx.set_source_rgba(*color)
 			ctx.show_text(line)
 		del ctx
+		surface.flush()
 		glBindTexture(GL_TEXTURE_2D, self.texture)
-		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, *self.size, GL_RGBA, GL_UNSIGNED_BYTE, self.surface.get_data())
+		glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, surface.get_data())
+		surface.finish()
 
 	def show(self):
 		glUseProgram(programs.screen_quad)

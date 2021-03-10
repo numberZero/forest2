@@ -3,7 +3,7 @@
 #define PI 3.1415926535897932384626433832795
 
 layout(points) in;
-layout(triangle_strip, max_vertices = 6) out;
+layout(triangle_strip, max_vertices = 4) out;
 
 layout(location = 0) uniform mat4 projection_matrix;
 layout(location = 1) uniform mat3 camera_matrix;
