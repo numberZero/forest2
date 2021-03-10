@@ -654,16 +654,11 @@ class BillRenderer:
 			h_step = 2 * math.pi / h_step_count
 			for u in range(h_step_count):
 				ha = u * h_step
-				camera_matrix = glm.translate(
-					glm.rotate(
-						glm.rotate(
-							mat4(1.0),
-							#float(0.0),
-							0.5 * math.pi - va,
-							vec3(1.0, 0.0, 0.0)),
-						ha,
-						vec3(0.0, 0.0, 1.0)),
-					vec3(0.0, 0.0, -0.5))
+				camera_matrix = mat4(1.0)
+				camera_matrix = glm.scale(camera_matrix, vec3(2.0))
+				camera_matrix = glm.rotate(camera_matrix, 0.5 * math.pi - va, vec3(1.0, 0.0, 0.0))
+				camera_matrix = glm.rotate(camera_matrix, ha, vec3(0.0, 0.0, 1.0))
+				camera_matrix = glm.translate(camera_matrix, vec3(0.0, 0.0, -0.5))
 				matrices.append(camera_matrix)
 		assert(len(matrices) == view_count)
 		self.matrices = matrices
