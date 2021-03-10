@@ -256,9 +256,9 @@ class Overlay:
 		ctx.set_source_rgba(1.0, 1.0, 1.0, 1.0)
 		ctx.scale(1.0, -1.0)
 		ctx.translate(0.0, -h)
-		ctx.select_font_face('Nimbus Sans', cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_BOLD)
-		font_size = 16.0
-		line_height = 1.25 * font_size
+		ctx.select_font_face('Nimbus Sans', cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+		font_size = 14.0
+		line_height = 19.0
 		x_offset = 0.5 * font_size
 		y_offset = line_height
 
