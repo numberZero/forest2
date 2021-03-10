@@ -346,6 +346,7 @@ def init():
 	glClearColor(0.2, 0.4, 0.9, 1.0)
 	glEnable(GL_MULTISAMPLE)
 	glDepthFunc(GL_LEQUAL)
+	set_vsync(True)
 
 fpsmeter = fps_meter.FPSMeter(fps_meter.TimeMeter2)
 
@@ -471,7 +472,7 @@ def render():
 
 	models, textures = np.sum(stat, axis=0)
 	lines = []
-	lines.append(((0.8, 0.8, 0.8), f'FPS: {fpsmeter.fps:.1f}, время с запуска: {time:.0f} с'))
+	lines.append(((0.8, 0.8, 0.8) if vsync else (1.0, 0.0, 0.0), f'FPS: {fpsmeter.fps:.1f} (vsync {"on" if vsync else "off"}; переключение: V), время с запуска: {time:.0f} с'))
 	lines.append(((0.8, 0.8, 0.8), f'Размер дерева: {tree_scale:.1f} (изменение: колёсико мыши)'))
 	lines.append(((1.0, 1.0, 1.0), f'Отрисовка текстурами с дальности {bill_threshold:.0f} (изменение: +/-). Отрисовано моделями: {models}, текстурами: {textures}, всего: {models + textures}'))
 	ctl_mode = 'полёт' if FLY_CONTROLS else 'обычный'
@@ -737,6 +738,11 @@ def moused_rotate(mpos: vec2):
 
 update_rotation = update_rotation_base
 
+def set_vsync(value):
+	global vsync
+	vsync = value
+	glfw.swap_interval(1 if vsync else 0)
+
 def handle_key(wnd, key: int, scancode: int, action, mods: int):
 	if action != glfw.PRESS:
 		return
@@ -779,6 +785,10 @@ def handle_key(wnd, key: int, scancode: int, action, mods: int):
 		bill_threshold += 5.0
 	if key == glfw.KEY_MINUS or key == glfw.KEY_KP_SUBTRACT:
 		bill_threshold = max(0.0, bill_threshold - 5.0)
+
+	global vsync
+	if key == glfw.KEY_V:
+		set_vsync(not vsync)
 
 def handle_cursor(wnd, x: float, y: float):
 	if glfw.get_input_mode(wnd, glfw.CURSOR) == glfw.CURSOR_DISABLED:
