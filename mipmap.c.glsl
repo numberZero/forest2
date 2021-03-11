@@ -1,9 +1,17 @@
-#version 430
+#version 450
 
 layout(local_size_x = 4, local_size_y = 4) in;
 
-layout(binding = 7, rgba16f) readonly restrict uniform image2D orig;
+layout(binding = 7, rgba16f) readonly restrict uniform image2DMS orig;
 layout(binding = 0, rgba8) writeonly restrict uniform image2D level[5];
+
+vec4 imageLoadMS(readonly restrict image2DMS image, ivec2 coord) {
+	int n = imageSamples(image);
+	vec4 result = vec4(0.0);
+	for (int k = 0; k < n; k++)
+		result += imageLoad(image, coord, k);
+	return result / n;
+}
 
 const ivec2 offs[4] = {{0, 0}, {1, 0}, {0, 1}, {1, 1}};
 shared vec4 texels[4][4];
@@ -19,7 +27,7 @@ void main() {
 		accums[1] = vec4(0.0);
 		for (int k = 0; k < 4; k++) {
 			ivec2 level0_pos = 2 * level1_pos + offs[k];
-			accums[0] = imageLoad(orig, level0_pos + offs[k]);
+			accums[0] = imageLoadMS(orig, level0_pos + offs[k]);
 			imageStore(level[0], level0_pos, accums[0]);
 			accums[1] += accums[0];
 		}

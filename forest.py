@@ -640,30 +640,24 @@ class BillRenderer:
 		self.projection_matrix = make_ortho_matrix()
 		self.model_matrix = model_matrix
 
-		self.color_ms, self.color_mm, self.depth = glGenTextures(3)
+		self.color_ms, self.depth = glGenTextures(2)
 		glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, self.color_ms)
 		glTexStorage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, self.samples, GL_RGBA16F, self.size, self.size, False)
-
-		glBindTexture(GL_TEXTURE_2D, self.color_mm)
-		glTexStorage2D(GL_TEXTURE_2D, self.levels, GL_RGBA16F, self.size, self.size)
 
 		glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, self.depth)
 		glTexStorage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, self.samples, GL_DEPTH_COMPONENT16, self.size, self.size, False)
 
-		self.fb_render, self.fb_blit = glGenFramebuffers(2)
-		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, self.fb_render)
+		self.fb = glGenFramebuffers(1)
+		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, self.fb)
 		glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, self.color_ms, 0)
 		glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, self.depth, 0)
-
-		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, self.fb_blit)
-		glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, self.color_mm, 0)
 
 		self.make_matrices()
 
 	def leave(self):
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
-		glDeleteFramebuffers(2, [self.fb_render, self.fb_blit])
-		glDeleteTextures([self.color_ms, self.color_mm, self.depth])
+		glDeleteFramebuffers(1, [self.fb])
+		glDeleteTextures([self.color_ms, self.depth])
 
 	def make_matrices(self):
 		matrices = []
@@ -703,7 +697,6 @@ class BillRenderer:
 		glVertexAttrib3f(2, 0.0, 0.0, 0.0)
 		glViewport(0, 0, self.size, self.size)
 		for view, camera_matrix in enumerate(self.matrices):
-			glBindFramebuffer(GL_FRAMEBUFFER, self.fb_render)
 			glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 			glUniformMatrix4fv(0, 1, GL_FALSE, self.projection_matrix * camera_matrix)
 
@@ -719,14 +712,8 @@ class BillRenderer:
 				glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, ctypes.c_void_p(0))
 				glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
 
-			glBindFramebuffer(GL_DRAW_FRAMEBUFFER, self.fb_blit)
-			##glFramebufferTextureLayer(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, layers, 0, view)
-			glBlitFramebuffer(0, 0, self.size, self.size, 0, 0, self.size, self.size, GL_COLOR_BUFFER_BIT, GL_NEAREST)
-			#glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, 0, 0)
-			glBindFramebuffer(GL_FRAMEBUFFER, 0)
-
 			glUseProgram(programs.mipmap)
-			glBindImageTexture(7, self.color_mm, 0, False, 0, GL_READ_ONLY, GL_RGBA16F);
+			glBindImageTexture(7, self.color_ms, 0, False, 0, GL_READ_ONLY, GL_RGBA16F);
 			for level in range(5):
 				glBindImageTexture(level, layers, level, False, view, GL_WRITE_ONLY, GL_RGBA8);
 			glDispatchCompute(self.size // 16, self.size // 16, 1)
