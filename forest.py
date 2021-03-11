@@ -115,12 +115,17 @@ def read_file(name) -> bytes:
 	with open(os.path.join(app_root, name), 'rb') as f:
 		return f.read()
 
+def sss(s):
+	if isinstance(s, bytes):
+		return str(s, 'utf-8')
+	return s
+
 def compile_shader(mode, code):
 	shader = glCreateShader(mode)
 	glShaderSource(shader, code)
 	glCompileShader(shader)
 	if not glGetShaderiv(shader, GL_COMPILE_STATUS):
-		raise Error('Shader compilation error: %s\n' % glGetShaderInfoLog(shader))
+		raise Error('Shader compilation error: %s\n' % sss(glGetShaderInfoLog(shader)))
 	return shader
 
 def link_program(*shaders):
@@ -131,7 +136,7 @@ def link_program(*shaders):
 	for shader in shaders:
 		glDeleteShader(shader)
 	if not glGetProgramiv(program, GL_LINK_STATUS):
-		raise Error('Shader compilation error: %s\n' % glGetProgramInfoLog(program))
+		raise Error('Shader compilation error: %s\n' % sss(glGetProgramInfoLog(program)))
 	return program
 
 def load_mesh(name, colors):
