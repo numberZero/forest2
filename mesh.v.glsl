@@ -10,8 +10,12 @@ layout(location = 2) in vec3 in_offset;
 layout(location = 3) in vec3 in_normal;
 
 out vec4 color;
+out vec3 f_color;
+out vec3 w_normal;
 
 void main() {
+	f_color = in_color;
+	w_normal = in_normal;
 	color = vec4(in_color * (0.5 + 0.5 * dot(in_normal, light_dir)), 1.0);
 	gl_Position = vp_matrix * (vec4(in_offset, 0.0) + m_matrix * vec4(in_pos, 1.0));
 }

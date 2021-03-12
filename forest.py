@@ -29,6 +29,7 @@ import numpy as np # pip:numpy
 import numpy.random as rnd
 from OpenGL.GL import * # pip:PyOpenGL
 from OpenGL.error import Error
+from math import *
 from glm import vec2, vec3, vec4, mat2, mat3, mat4
 
 import fps_meter
@@ -58,7 +59,7 @@ bill_threshold = 15.0
 
 #format, pixel_size = GL_R3_G3_B2, 1
 #format, pixel_size = GL_RGB5_A1, 2
-format, pixel_size = GL_RGBA8, 4
+format, format_nm = GL_RGBA8, GL_RGBA8_SNORM
 #format, pixel_size = GL_SRGB8_ALPHA8, 4
 #format, pixel_size = GL_RGBA16F, 8
 
@@ -303,6 +304,10 @@ def init():
 		compile_shader(GL_VERTEX_SHADER, read_file("mesh.v.glsl")),
 		compile_shader(GL_FRAGMENT_SHADER, read_file("mesh.f.glsl")),
 	)
+	programs.mesh_nm = link_program(
+		compile_shader(GL_VERTEX_SHADER, read_file("mesh.v.glsl")),
+		compile_shader(GL_FRAGMENT_SHADER, read_file("mesh_nm.f.glsl")),
+	)
 	programs.bill = link_program(
 		compile_shader(GL_VERTEX_SHADER, read_file("bill.v.glsl")),
 		compile_shader(GL_GEOMETRY_SHADER, read_file("bill.g.glsl")),
@@ -336,7 +341,7 @@ def init():
 		tree.name = kind
 		tree.prob = prob
 		tree.bufs = mesh
-		tree.bill = br.render(mesh)
+		tree.bill_color, tree.bill_normal = br.render(mesh)
 		meshes.append(tree)
 	br.leave()
 	global cmb
@@ -472,6 +477,8 @@ stat = np.ndarray((0, 2))
 def render():
 	global stat
 	time = glfw.get_time()
+	sun_angle = 0.2 * time
+	light_dir = glm.normalize(vec3(sin(sun_angle), 0.707 * cos(sun_angle), 0.707 * cos(sun_angle)))
 
 	models, textures = np.sum(stat, axis=0)
 	lines = []
@@ -516,6 +523,7 @@ def render():
 	glUseProgram(programs.mesh)
 	glUniformMatrix4fv(0, 1, GL_FALSE, projection_matrix * camera_matrix)
 	glUniformMatrix4fv(1, 1, GL_FALSE, glm.scale(model_matrix, vec3(tree_scale)))
+	glUniform3fv(2, 1, light_dir)
 
 	glEnableVertexAttribArray(0)
 	glEnableVertexAttribArray(2)
@@ -563,8 +571,10 @@ def render():
 
 	def render_bills(mode):
 		glUniform1i(5, mode)
+		glUniform3fv(7, 1, light_dir)
 		for k in range(len(ocounts)):
-			glBindTextureUnit(0, meshes[k].bill)
+			glBindTextureUnit(0, meshes[k].bill_color)
+			glBindTextureUnit(1, meshes[k].bill_normal)
 			glDrawArraysIndirect(GL_POINTS, ctypes.c_void_p(36 * k + 20))
 
 	glUseProgram(programs.bill)
@@ -628,13 +638,16 @@ class BillRenderer:
 		self.size = 1 << mip_levels
 		self.samples = 8
 
-		self.program = programs.mesh
+		self.program = programs.mesh_nm
 
 		self.projection_matrix = make_ortho_matrix()
 		self.model_matrix = model_matrix
 
-		self.color_ms, self.depth = glGenTextures(2)
-		glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, self.color_ms)
+		self.color, self.normal, self.depth = glGenTextures(3)
+		glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, self.color)
+		glTexStorage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, self.samples, GL_RGBA16F, self.size, self.size, False)
+
+		glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, self.normal)
 		glTexStorage2DMultisample(GL_TEXTURE_2D_MULTISAMPLE, self.samples, GL_RGBA16F, self.size, self.size, False)
 
 		glBindTexture(GL_TEXTURE_2D_MULTISAMPLE, self.depth)
@@ -642,15 +655,17 @@ class BillRenderer:
 
 		self.fb = glGenFramebuffers(1)
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, self.fb)
-		glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, self.color_ms, 0)
+		glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, self.color, 0)
+		glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, self.normal, 0)
 		glFramebufferTexture(GL_DRAW_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, self.depth, 0)
+		glDrawBuffers([GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1])
 
 		self.make_matrices()
 
 	def leave(self):
 		glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0)
 		glDeleteFramebuffers(1, [self.fb])
-		glDeleteTextures([self.color_ms, self.depth])
+		glDeleteTextures([self.color, self.normal, self.depth])
 
 	def make_matrices(self):
 		matrices = []
@@ -672,16 +687,19 @@ class BillRenderer:
 		return matrices
 
 	def render(self, mesh):
-		layers = glGenTextures(1)
-		glBindTexture(GL_TEXTURE_2D_ARRAY, layers)
-		#glTexStorage3D(GL_TEXTURE_2D_ARRAY, self.levels, format, self.size, self.size, view_count)
-		glTexStorage3D(GL_TEXTURE_2D_ARRAY, 5, format, self.size, self.size, view_count)
-		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
-		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
-		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
-		glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-		glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAX_ANISOTROPY, 8.0)
-		glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_LOD_BIAS, -0.5)
+		layers_color, layers_normal = glGenTextures(2)
+		for tex, fmt in [
+				(layers_color, format),
+				(layers_normal, format_nm),
+				]:
+			glBindTexture(GL_TEXTURE_2D_ARRAY, tex)
+			glTexStorage3D(GL_TEXTURE_2D_ARRAY, 5, fmt, self.size, self.size, view_count)
+			glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+			glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+			glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR)
+			glTexParameteri(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+			glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAX_ANISOTROPY, 8.0)
+			glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_LOD_BIAS, -0.5)
 
 		glUseProgram(self.program)
 		glUniformMatrix4fv(1, 1, GL_FALSE, self.model_matrix)
@@ -706,22 +724,22 @@ class BillRenderer:
 				glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
 
 			glUseProgram(programs.mipmap)
-			glBindImageTexture(7, self.color_ms, 0, False, 0, GL_READ_ONLY, GL_RGBA16F);
-			for level in range(5):
-				glBindImageTexture(level, layers, level, False, view, GL_WRITE_ONLY, GL_RGBA8);
-			glDispatchCompute(self.size // 16, self.size // 16, 1)
+			for src, dst, fmt in [
+					(self.color, layers_color, format),
+					(self.normal, layers_normal, format_nm),
+					]:
+				glBindImageTexture(7, src, 0, False, 0, GL_READ_ONLY, GL_RGBA16F);
+				for level in range(5):
+					glBindImageTexture(level, dst, level, False, view, GL_WRITE_ONLY, fmt);
+				glDispatchCompute(self.size // 16, self.size // 16, 1)
 			glUseProgram(self.program)
 
 		glDisableVertexAttribArray(0)
 		glDisableVertexAttribArray(3)
 		glUseProgram(0)
+		glMemoryBarrier(GL_TEXTURE_FETCH_BARRIER_BIT)
 
-		image_size = self.size**2
-		total_layer_size = pixel_size * image_size / 0.75 # 0.75 for mipmaps
-		total_gram = view_count * total_layer_size
-		print(f'{total_gram / 1024**2} MiB GPU RAM used for the layers')
-
-		return layers
+		return layers_color, layers_normal
 
 def resize_window(wnd, width: int, height: int):
 	global projection_matrix, window_width, window_height
