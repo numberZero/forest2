@@ -308,11 +308,6 @@ def init():
 		compile_shader(GL_GEOMETRY_SHADER, read_file("bill.g.glsl")),
 		compile_shader(GL_FRAGMENT_SHADER, read_file("bill.f.glsl")),
 	)
-	programs.bill_oit = link_program(
-		compile_shader(GL_VERTEX_SHADER, read_file("bill.v.glsl")),
-		compile_shader(GL_GEOMETRY_SHADER, read_file("bill.g.glsl")),
-		compile_shader(GL_FRAGMENT_SHADER, read_file("bill_oit1.f.glsl")),
-	)
 	programs.split = link_program(
 		compile_shader(GL_COMPUTE_SHADER, read_file("split.c.glsl")),
 	)
@@ -566,25 +561,24 @@ def render():
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, hstb)
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, cmb)
 
-	def render_bills(program, threshold=transparency_threshold, premultiplied_alpha=None):
-		glUseProgram(program)
-		glUniformMatrix4fv(0, 1, GL_FALSE, projection_matrix)
-		glUniformMatrix3fv(1, 1, GL_FALSE, mat3(camera_matrix))
-		glUniform3fv(2, 1, position)
-		glUniform1i(3, v_halfcircle_steps)
-		glUniform1f(4, threshold)
-		if premultiplied_alpha != None:
-			glUniform1i(5, 1 if premultiplied_alpha else 0)
+	def render_bills(mode):
+		glUniform1i(5, mode)
 		for k in range(len(ocounts)):
 			glBindTextureUnit(0, meshes[k].bill)
 			glDrawArraysIndirect(GL_POINTS, ctypes.c_void_p(36 * k + 20))
 
+	glUseProgram(programs.bill)
+	glUniformMatrix4fv(0, 1, GL_FALSE, projection_matrix)
+	glUniformMatrix3fv(1, 1, GL_FALSE, mat3(camera_matrix))
+	glUniform3fv(2, 1, position)
+	glUniform1i(3, v_halfcircle_steps)
+	glUniform1f(4, transparency_threshold)
 	if TRANSPARENCY == 'blend':
-		render_bills(programs.bill, premultiplied_alpha=True)
+		render_bills(1)
 	elif TRANSPARENCY in ['onepass', 'twopass_depth', 'twopass_color']:
 		if TRANSPARENCY == 'twopass_color':
 			glDisable(GL_BLEND)
-			render_bills(programs.bill, premultiplied_alpha=False)
+			render_bills(0)
 			glEnable(GL_BLEND)
 		w, h = window_width, window_height
 		glBindFramebuffer(GL_READ_FRAMEBUFFER, 0)
@@ -596,14 +590,13 @@ def render():
 		glBlendFunci(1, GL_ZERO, GL_SRC_COLOR)
 		if TRANSPARENCY == 'twopass_depth':
 			glColorMask(False, False, False, False)
-			render_bills(programs.bill)
+			render_bills(1)
 			glColorMask(True, True, True, True)
 		glDepthMask(False)
 		if TRANSPARENCY == 'twopass_color':
 			glDepthFunc(GL_LESS)
-			render_bills(programs.bill_oit, 0.0)
-		else:
-			render_bills(programs.bill_oit)
+			glUniform1f(4, 0.0)
+		render_bills(2)
 	else:
 		assert(False)
 
