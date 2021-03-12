@@ -530,7 +530,7 @@ def render():
 
 	glUseProgram(programs.mesh)
 	glUniformMatrix4fv(0, 1, GL_FALSE, projection_matrix * camera_matrix)
-	glUniformMatrix4fv(1, 1, GL_FALSE, glm.scale(model_matrix, vec3(tree_scale)))
+	glUniformMatrix4fv(1, 1, GL_FALSE, mat4(1.0))
 	glUniform3fv(2, 1, light_dir)
 
 	# Солнце =)
@@ -543,6 +543,7 @@ def render():
 	glVertexAttrib3f(3, 0.0, 0.0, 0.0)
 	glDrawArrays(GL_POINTS, 0, 1)
 
+	glUniformMatrix4fv(1, 1, GL_FALSE, glm.scale(model_matrix, vec3(tree_scale)))
 	glUniform3fv(3, 1, ambi_color)
 	glUniform3fv(4, 1, light_color)
 	glEnableVertexAttribArray(0)
@@ -746,10 +747,11 @@ class BillRenderer:
 				glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
 
 			glUseProgram(programs.mipmap)
-			for src, dst, fmt in [
-					(self.color, layers_color, format),
-					(self.normal, layers_normal, format_nm),
+			for src, dst, fmt, n in [
+					(self.color, layers_color, format, 0),
+					(self.normal, layers_normal, format_nm, 1),
 					]:
+				glUniform1i(0, n)
 				glBindImageTexture(7, src, 0, False, 0, GL_READ_ONLY, GL_RGBA16F);
 				for level in range(5):
 					glBindImageTexture(level, dst, level, False, view, GL_WRITE_ONLY, fmt);
