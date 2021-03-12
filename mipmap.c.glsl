@@ -3,7 +3,7 @@
 layout(local_size_x = 4, local_size_y = 4) in;
 
 layout(binding = 7, rgba16f) readonly restrict uniform image2DMS orig;
-layout(binding = 0) writeonly restrict uniform image2D level[5];
+layout(binding = 0) writeonly restrict uniform image2D mips[5];
 
 layout(location = 0) uniform bool normal = false;
 
@@ -15,58 +15,75 @@ vec4 imageLoadMS(readonly restrict image2DMS image, ivec2 coord) {
 	return result / n;
 }
 
-void subscale(inout vec4 sum) {
+ivec2 pos[5];
+vec4 accums[6];
+
+void accum_begin(int level) {
+	accums[level] = vec4(0.0);
+}
+
+void accum_end(int level) {
+	accums[level] /= 4.0;
+}
+
+void accum(int level) {
+	accums[level] += accums[level - 1];
+}
+
+void load(int level, vec4 value) {
+	accums[level] = value;
+}
+
+void store(int level) {
+	vec4 value = accums[level];
 	if (normal)
-		sum.xyz = normalize(sum.xyz);
-	else
-		sum.xyz /= 4.0;
-	sum.w /= 4.0;
+		value.xyz = normalize(value.xyz);
+	imageStore(mips[level], pos[level], value);
 }
 
 const ivec2 offs[4] = {{0, 0}, {1, 0}, {0, 1}, {1, 1}};
 shared vec4 texels[4][4];
 
 void main() {
-	ivec2 level4_pos = ivec2(gl_WorkGroupID.xy);
-	vec4 accums[7];
+	pos[4] = ivec2(gl_WorkGroupID.xy);
 
-	ivec2 level2_pos = 4 * level4_pos + ivec2(gl_LocalInvocationID.xy);
-	accums[2] = vec4(0.0);
+	pos[2] = 4 * pos[4] + ivec2(gl_LocalInvocationID.xy);
+	accum_begin(2);
 	for (int l = 0; l < 4; l++) {
-		ivec2 level1_pos = 2 * level2_pos + offs[l];
-		accums[1] = vec4(0.0);
+		pos[1] = 2 * pos[2] + offs[l];
+		accum_begin(1);
 		for (int k = 0; k < 4; k++) {
-			ivec2 level0_pos = 2 * level1_pos + offs[k];
-			accums[0] = imageLoadMS(orig, level0_pos + offs[k]);
-			imageStore(level[0], level0_pos, accums[0]);
-			accums[1] += accums[0];
+			pos[0] = 2 * pos[1] + offs[k];
+			load(0, imageLoadMS(orig, pos[0] + offs[k]));
+			store(0);
+			accum(1);
 		}
-		subscale(accums[1]);
-		imageStore(level[1], level1_pos, accums[1]);
-		accums[2] += accums[1];
+		accum_end(1);
+		store(1);
+		accum(2);
 	}
-	subscale(accums[2]);
-	imageStore(level[2], level2_pos, accums[2]);
+	accum_end(2);
+	store(2);
 
 	texels[gl_LocalInvocationID.x][gl_LocalInvocationID.y] = accums[2];
 	barrier();
 	if (gl_LocalInvocationIndex != 0)
 		return;
 
-	accums[4] = vec4(0.0);
+	accum_begin(4);
 	for (int l = 0; l < 4; l++) {
-		ivec2 level3_pos = 2 * level4_pos + offs[l];
-		accums[1] = vec4(0.0);
+		pos[3] = 2 * pos[4] + offs[l];
+		accum_begin(3);
 		for (int k = 0; k < 4; k++) {
-			ivec2 level2_pos = 2 * level2_pos + offs[k];
+			pos[2] = 2 * pos[2] + offs[k];
 			ivec2 off = 2 * offs[l] + offs[k];
-			accums[2] = texels[off.x][off.y];
-			accums[3] += accums[2];
+			load(2, texels[off.x][off.y]);
+			accum(3);
 		}
-		subscale(accums[3]);
-		imageStore(level[3], level3_pos, accums[3]);
-		accums[4] += accums[3];
+		accum_end(3);
+		store(3);
+		accum(4);
 	}
-	subscale(accums[4]);
-	imageStore(level[4], level4_pos, accums[4]);
+	accum_end(4);
+	store(4);
 }
