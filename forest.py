@@ -474,11 +474,19 @@ def prepare_split():
 
 stat = np.ndarray((0, 2))
 
+def croot(x):
+	return x**(1/3) if x >= 0 else -croot(-x)
+
 def render():
 	global stat
 	time = glfw.get_time()
 	sun_angle = 0.2 * time
-	light_dir = glm.normalize(vec3(sin(sun_angle), 0.707 * cos(sun_angle), 0.707 * cos(sun_angle)))
+	sun_dir = glm.normalize(vec3(-cos(sun_angle), 0.707 * sin(sun_angle), 0.707 * sin(sun_angle)))
+	light_dir = sun_dir
+	light_color = vec3(0.5 * max(-0.1, sin(sun_angle)))
+	ambi_color = vec3(0.6 + 0.4 * sin(sun_angle)) * vec3(0.7, 0.8, 1.0) + vec3(0.3, 0.2, 0.0) * light_color
+
+	glClearColor(*(vec3(0.2, 0.4, 0.9) * ambi_color), 0.0)
 
 	models, textures = np.sum(stat, axis=0)
 	lines = []
@@ -525,6 +533,18 @@ def render():
 	glUniformMatrix4fv(1, 1, GL_FALSE, glm.scale(model_matrix, vec3(tree_scale)))
 	glUniform3fv(2, 1, light_dir)
 
+	# Солнце =)
+	glPointSize(16.0)
+	glUniform3f(3, 1.0, 1.0, 1.0)
+	glUniform3f(4, 0.0, 0.0, 0.0)
+	glVertexAttrib3fv(0, 1000.0 * sun_dir)
+	glVertexAttrib3f(1, 1.0, 1.0, 1.0)
+	glVertexAttrib3f(2, 0.0, 0.0, 0.0)
+	glVertexAttrib3f(3, 0.0, 0.0, 0.0)
+	glDrawArrays(GL_POINTS, 0, 1)
+
+	glUniform3fv(3, 1, ambi_color)
+	glUniform3fv(4, 1, light_color)
 	glEnableVertexAttribArray(0)
 	glEnableVertexAttribArray(2)
 	glEnableVertexAttribArray(3)
@@ -553,7 +573,7 @@ def render():
 	glDisableVertexAttribArray(3)
 
 	glUseProgram(0)
-	glColor3f(0.12, 0.10, 0.02)
+	glColor3fv(vec3(0.12, 0.10, 0.02) * (ambi_color + max(0.0, light_dir.z) * light_color))
 	glBegin(GL_QUADS)
 	glVertex2f(-rad, -rad)
 	glVertex2f(-rad,  rad)
@@ -571,7 +591,6 @@ def render():
 
 	def render_bills(mode):
 		glUniform1i(5, mode)
-		glUniform3fv(7, 1, light_dir)
 		for k in range(len(ocounts)):
 			glBindTextureUnit(0, meshes[k].bill_color)
 			glBindTextureUnit(1, meshes[k].bill_normal)
@@ -583,6 +602,9 @@ def render():
 	glUniform3fv(2, 1, position)
 	glUniform1i(3, v_halfcircle_steps)
 	glUniform1f(4, transparency_threshold)
+	glUniform3fv(6, 1, light_dir)
+	glUniform3fv(7, 1, ambi_color)
+	glUniform3fv(8, 1, light_color)
 	if TRANSPARENCY == 'blend':
 		render_bills(1)
 	elif TRANSPARENCY in ['onepass', 'twopass_depth', 'twopass_color']:
