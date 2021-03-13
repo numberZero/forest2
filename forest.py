@@ -324,6 +324,9 @@ def init():
 	programs.mipmap = link_program(
 		compile_shader(GL_COMPUTE_SHADER, read_file("mipmap.c.glsl")),
 	)
+	programs.mipmap_noisy = link_program(
+		compile_shader(GL_COMPUTE_SHADER, read_file("mipmap_noisy.c.glsl")),
+	)
 	glEnable(GL_BLEND)
 	glEnable(GL_FRAMEBUFFER_SRGB)
 	glEnable(GL_DEPTH_TEST)
@@ -747,15 +750,17 @@ class BillRenderer:
 				glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0)
 
 			glUseProgram(programs.mipmap)
-			for src, dst, fmt, n in [
-					(self.color, layers_color, format, 0),
-					(self.normal, layers_normal, format_nm, 1),
-					]:
-				glUniform1i(0, n)
-				glBindImageTexture(7, src, 0, False, 0, GL_READ_ONLY, GL_RGBA16F);
-				for level in range(5):
-					glBindImageTexture(level, dst, level, False, view, GL_WRITE_ONLY, fmt);
-				glDispatchCompute(self.size // 16, self.size // 16, 1)
+			glUniform1i(0, 0)
+			glBindImageTexture(7, self.color, 0, False, 0, GL_READ_ONLY, GL_RGBA16F);
+			for level in range(5):
+				glBindImageTexture(level, layers_color, level, False, view, GL_WRITE_ONLY, format);
+			glDispatchCompute(self.size // 16, self.size // 16, 1)
+			#glUniform1i(0, 1)
+			glUseProgram(programs.mipmap_noisy)
+			glBindImageTexture(7, self.normal, 0, False, 0, GL_READ_ONLY, GL_RGBA16F);
+			for level in range(5):
+				glBindImageTexture(level, layers_normal, level, False, view, GL_WRITE_ONLY, format_nm);
+			glDispatchCompute(self.size // 16, self.size // 16, 1)
 			glUseProgram(self.program)
 
 		glDisableVertexAttribArray(0)

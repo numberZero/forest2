@@ -27,7 +27,10 @@ void accum_end(int level) {
 }
 
 void accum(int level) {
-	accums[level] += accums[level - 1];
+	vec4 prev = accums[level - 1];
+	if (normal)
+		prev.xyz = normalize(prev.xyz) * prev.w;
+	accums[level] += prev;
 }
 
 void load(int level, vec4 value) {
