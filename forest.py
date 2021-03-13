@@ -483,7 +483,7 @@ def render():
 	sun_angle = 0.2 * time
 	sun_dir = glm.normalize(vec3(-cos(sun_angle), 0.707 * sin(sun_angle), 0.707 * sin(sun_angle)))
 	light_dir = sun_dir
-	light_color = vec3(0.5 * max(-0.1, sin(sun_angle)))
+	light_color = vec3(0.5 * max(0.0, sin(sun_angle))**0.5)
 	ambi_color = vec3(0.6 + 0.4 * sin(sun_angle)) * vec3(0.7, 0.8, 1.0) + vec3(0.3, 0.2, 0.0) * light_color
 
 	glClearColor(*(vec3(0.2, 0.4, 0.9) * ambi_color), 0.0)

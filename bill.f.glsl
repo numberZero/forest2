@@ -19,8 +19,11 @@ void main() {
 		discard;
 	vec4 n = texture(nm, vec3(uv, layer));
 	vec3 normal = normalize(n.xyz);
+	if (any(isnan(normal)))
+		normal = vec3(0.0);
 	float light = max(0.0, dot(normal, light_dir));
-	c.rgb *= ambi_color + light * light_color;
+	float ambilight = 0.8 + 0.2 * normal.z;
+	c.rgb *= ambilight * ambi_color + light * light_color;
 	if (mode == 0)
 		c.rgb /= c.a;
 	if (mode == 2) {

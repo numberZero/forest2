@@ -19,6 +19,7 @@ void main() {
 	f_color = in_color;
 	w_normal = vec3(m_matrix * vec4(in_normal, 0.0));
 	float light = max(0.0, dot(w_normal, light_dir));
-	color = vec4(in_color * (ambi_color + light * light_color), 1.0);
+	float ambilight = 0.8 + 0.2 * w_normal.z;
+	color = vec4(in_color * (ambilight * ambi_color + light * light_color), 1.0);
 	gl_Position = vp_matrix * (vec4(in_offset, 0.0) + m_matrix * vec4(in_pos, 1.0));
 }
